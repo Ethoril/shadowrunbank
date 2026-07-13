@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matrix_Topology :: Overlord_View</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #03070d;
+            --bg-panel: #0a111a;
+            --grid-line: rgba(0, 210, 255, 0.05);
+            --primary: #00d2ff;
+            --success: #4af626;
+            --danger: #ff2a2a;
+            --warning: #ffb300;
+            --purple: #bd00ff;
+            --text-main: #c8e6c9;
+            --text-muted: #527874;
+        }
+
+        * { box-sizing: border-box; user-select: none; }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Share Tech Mono', monospace;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--primary);
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2px; color: var(--primary); }
+
+        .app-container {
+            display: grid;
+            grid-template-columns: 250px 1fr 300px;
+            gap: 15px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* Panneaux Latéraux */
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid rgba(0, 210, 255, 0.2);
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+        }
+
+        .panel-title {
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            color: var(--primary);
+            border-bottom: 1px dashed rgba(0, 210, 255, 0.3);
+            padding-bottom: 5px;
+            margin-bottom: 5px;
+        }
+
+        /* Palette d'outils */
+        .tool-btn {
+            background: transparent;
+            border: 1px solid var(--text-muted);
+            color: var(--text-main);
+            padding: 10px;
+            text-align: left;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .tool-btn:hover, .tool-btn.active {
+            border-color: var(--primary);
+            background: rgba(0, 210, 255, 0.1);
+            box-shadow: 0 0 8px rgba(0, 210, 255, 0.3);
+        }
+
+        .tool-btn .icon-preview { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+        /* Centre : Zone de Carte */
+        .center-zone { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+
+        .tabs { display: flex; gap: 10px; }
+        .tab-btn {
+            background: transparent;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+            padding: 8px 16px;
+            cursor: pointer;
+            font-family: inherit;
+            text-transform: uppercase;
+        }
+        .tab-btn.active { background: var(--primary); color: var(--bg-dark); font-weight: bold; }
+
+        .map-wrapper {
+            position: relative;
+            flex: 1;
+            border: 2px solid var(--primary);
+            background: rgba(0, 0, 0, 0.4);
+            overflow: hidden;
+        }
+
+        .grid-overlay {
+            position: absolute;
+            top:0; left:0; width:100%; height:100%;
+            background-image: linear-gradient(var(--grid-line) 1px, transparent 1px), linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+            background-size: 30px 30px;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .level-map {
+            position: absolute;
+            top:0; left:0; width:100%; height:100%;
+            display: grid;
+            padding: 15px;
+            gap: 10px;
+            z-index: 2;
+        }
+
+        /* Layouts de base identiques */
+        #map-lvl0 { grid-template-columns: 1fr 2fr 1fr; grid-template-rows: 1fr 2fr; }
+        #map-lvl-1 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; }
+        #map-lvl-2 { grid-template-columns: 1fr 2fr; grid-template-rows: 1fr 2fr; }
+
+        .room {
+            border: 1px solid rgba(0, 210, 255, 0.15);
+            background: rgba(0, 210, 255, 0.02);
+            display: flex;
+            align-items: flex-top;
+            padding: 10px;
+            color: rgba(200, 230, 201, 0.4);
+            font-size: 0.8rem;
+        }
+
+        /* Couche SVG pour les connexions réseau */
+        .network-svg {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 3;
+        }
+
+        /* Couche des entités interactives */
+        .entities-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 4;
+        }
+
+        /* Représentation des Icônes d'entités */
+        .entity {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: bold;
+            border: 2px solid transparent;
+            box-shadow: 0 0 10px rgba(0,0,0,0.8);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .entity:hover, .entity.selected {
+            transform: translate(-50%, -50%) scale(1.3);
+            z-index: 100;
+            box-shadow: 0 0 15px currentColor;
+        }
+
+        /* CSS Motion / États des entités */
+        .state-active { animation: pulse-slow 2s infinite alternate; }
+        .state-hacked { animation: glitch-flicker 0.4s infinite alternate; }
+        .state-offline { opacity: 0.4; animation: none !important; }
+
+        @keyframes pulse-slow {
+            0% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 5px currentColor; }
+            100% { transform: translate(-50%, -50%) scale(1.1); box-shadow: 0 0 15px currentColor; }
+        }
+        @keyframes glitch-flicker {
+            0% { opacity: 0.3; transform: translate(-50%, -50%) skewX(-5deg); }
+            100% { opacity: 1; transform: translate(-50%, -50%) skewX(5deg); }
+        }
+
+        /* Formulaires Inspector */
+        .inspector-field {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 10px;
+        }
+        select, input {
+            background: var(--bg-dark);
+            border: 1px solid var(--primary);
+            color: var(--text-main);
+            padding: 8px;
+            font-family: inherit;
+        }
+        .btn-action {
+            background: transparent;
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            padding: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            text-transform: uppercase;
+        }
+        .btn-action:hover { background: var(--danger); color: var(--bg-dark); }
+
+        /* Animation des câbles réseau SVG */
+        .network-cable {
+            stroke-dasharray: 6;
+            animation: data-flow 1.5s linear infinite;
+        }
+        @keyframes data-flow {
+            to { stroke-dashoffset: -20; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>[OVERLORD_TOPOLOGY] :: Surveillance Réseau Banque</h1>
+        <div id="status-ticker" style="color: var(--success)">SYSTEM_READY // APPAREILS APPAIRÉS</div>
+    </header>
+
+    <div class="app-container">
+        <div class="panel">
+            <div class="panel-title">Outils de Placement</div>
+            <button class="tool-btn active" id="tool-select" onclick="setTool('select')">
+                <span class="icon-preview" style="background: var(--primary)"></span> Mode Sélection
+            </button>
+            <button class="tool-btn" id="tool-net" onclick="setTool('network_node')">
+                <span class="icon-preview" style="background: var(--warning)"></span> [+] Nœud Réseau
+            </button>
+            <button class="tool-btn" id="tool-cam" onclick="setTool('camera')">
+                <span class="icon-preview" style="background: var(--danger)"></span> [+] Caméra Optique
+            </button>
+            <button class="tool-btn" id="tool-turret" onclick="setTool('turret')">
+                <span class="icon-preview" style="background: #ff5722"></span> [+] Tourelle Sécu
+            </button>
+            <button class="tool-btn" id="tool-barrier" onclick="setTool('barrier')">
+                <span class="icon-preview" style="background: var(--purple)"></span> [+] Barrière Mana
+            </button>
+        </div>
+
+        <div class="center-zone">
+            <div class="tabs">
+                <button class="tab-btn active" id="tab-lvl0" onclick="switchLevel('lvl0')">Niv 0 : Public</button>
+                <button class="tab-btn" id="tab-lvl-1" onclick="switchLevel('lvl-1')">Niv -1 : Serveurs</button>
+                <button class="tab-btn" id="tab-lvl-2" onclick="switchLevel('lvl-2')">Niv -2 : Voûte</button>
+            </div>
+
+            <div class="map-wrapper" id="map-click-zone" onclick="handleMapClick(event)">
+                <div class="grid-overlay"></div>
+                <svg class="network-svg" id="network-lines"></svg>
+                <div class="entities-layer" id="entities-layer"></div>
+
+                <div id="map-lvl0" class="level-map">
+                    <div class="room" style="grid-row: span 2;"><span>Portes Tournantes</span></div>
+                    <div class="room" style="grid-column: span 2;"><span>Hall Public</span></div>
+                    <div class="room"><span>Guichets</span></div>
+                    <div class="room"><span>Bureaux Clients</span></div>
+                </div>
+
+                <div id="map-lvl-1" class="level-map" style="display:none;">
+                    <div class="room" style="grid-column: span 2;"><span>Couloir Administratif</span></div>
+                    <div class="room"><span>Salle des Serveurs</span></div>
+                    <div class="room"><span>Salle de Repos</span></div>
+                    <div class="room" style="grid-column: span 2;"><span>Gaine Ventilation</span></div>
+                </div>
+
+                <div id="map-lvl-2" class="level-map" style="display:none;">
+                    <div class="room" style="grid-column: span 2;"><span>Sas d'Accès Blindé</span></div>
+                    <div class="room"><span>Zone de Tri</span></div>
+                    <div class="room"><span>Grande Voûte</span></div>
+                    <div class="room" style="grid-column: span 2;"><span>COFFRE 734</span></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel" id="inspector-panel">
+            <div class="panel-title">Inspecteur d'Entité</div>
+            <div id="inspector-empty" style="color: var(--text-muted); font-style: italic;">
+                Sélectionne un élément sur la carte pour modifier ses propriétés ou lier son réseau.
+            </div>
+            <div id="inspector-content" style="display: none;">
+                <div class="inspector-field">
+                    <label>Type d'entité :</label>
+                    <span id="ins-type" style="font-weight: bold; color: var(--primary);"></span>
+                </div>
+                <div class="inspector-field">
+                    <label>Nom de l'élément :</label>
+                    <input type="text" id="ins-name" oninput="updateSelectedName(this.value)">
+                </div>
+                <div class="inspector-field">
+                    <label>Statut opérationnel :</label>
+                    <select id="ins-state" onchange="updateSelectedState(this.value)">
+                        <option value="active">Actif / Sécurisé</option>
+                        <option value="hacked">Piraté (Hacked)</option>
+                        <option value="offline">Hors-ligne (Offline)</option>
+                    </select>
+                </div>
+                <div class="inspector-field" id="ins-network-container">
+                    <label>Liaison Nœud Réseau :</label>
+                    <select id="ins-network" onchange="updateSelectedNetwork(this.value)">
+                        </select>
+                </div>
+                <hr style="border-color: rgba(0,210,255,0.1); margin: 15px 0;">
+                <button class="btn-action" onclick="deleteSelectedEntity()">Supprimer l'élément</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- ÉTAT GLOBAL DE L'APPLICATION ---
+        const state = {
+            currentLevel: 'lvl0',
+            activeTool: 'select',
+            selectedEntityId: null,
+            entities: [] // Stocke tous les objets placés
+        };
+
+        const catalog = {
+            network_node: { label: 'NET', color: 'var(--warning)' },
+            camera: { label: 'CAM', color: 'var(--danger)' },
+            turret: { label: 'TRT', color: '#ff5722' },
+            barrier: { label: 'BAR', color: 'var(--purple)' }
+        };
+
+        // --- CONTRÔLES DES OUTILS ET NIVEAUX ---
+        function setTool(toolName) {
+            state.activeTool = toolName;
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+            if(toolName === 'select') document.getElementById('tool-select').classList.add('active');
+            if(toolName === 'network_node') document.getElementById('tool-net').classList.add('active');
+            if(toolName === 'camera') document.getElementById('tool-cam').classList.add('active');
+            if(toolName === 'turret') document.getElementById('tool-turret').classList.add('active');
+            if(toolName === 'barrier') document.getElementById('tool-barrier').classList.add('active');
+        }
+
+        function switchLevel(levelId) {
+            state.currentLevel = levelId;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('tab-' + levelId).classList.add('active');
+            
+            // Masquer/Afficher les structures des pièces
+            document.getElementById('map-lvl0').style.display = levelId === 'lvl0' ? 'grid' : 'none';
+            document.getElementById('map-lvl-1').style.display = levelId === 'lvl-1' ? 'grid' : 'none';
+            document.getElementById('map-lvl-2').style.display = levelId === 'lvl-2' ? 'grid' : 'none';
+
+            state.selectedEntityId = null;
+            updateInspector();
+            renderEntities();
+        }
+
+        // --- GESTION DES CLICS SUR LA CARTE ---
+        function handleMapClick(e) {
+            if (state.activeTool === 'select') return;
+
+            const mapWrapper = document.getElementById('map-click-zone');
+            const rect = mapWrapper.getBoundingClientRect();
+            
+            // Calcul des coordonnées relatives en pourcentage
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+            const id = 'ent_' + Date.now();
+            const newEntity = {
+                id: id,
+                type: state.activeTool,
+                level: state.currentLevel,
+                name: catalog[state.activeTool].label + '_' + Math.floor(Math.random() * 900 + 100),
+                state: 'active',
+                networkId: '', // Vide par défaut
+                x: x,
+                y: y
+            };
+
+            state.entities.push(newEntity);
+            state.selectedEntityId = id;
+            
+            setTool('select'); // Repasse en mode sélection après placement
+            renderEntities();
+            updateInspector();
+        }
+
+        // --- RENDU GRAPHIQUE ET LIGNES DE FLUX SVG ---
+        function renderEntities() {
+            const layer = document.getElementById('entities-layer');
+            layer.innerHTML = '';
+
+            // Filtrer les entités du niveau courant
+            const currentEntities = state.entities.filter(e => e.level === state.currentLevel);
+
+            currentEntities.forEach(ent => {
+                const div = document.createElement('div');
+                div.className = `entity state-${getEntityEffectiveState(ent)}`;
+                div.id = ent.id;
+                div.style.left = `${ent.x}%`;
+                div.style.top = `${ent.y}%`;
+                div.style.color = catalog[ent.type].color;
+                div.style.borderColor = catalog[ent.type].color;
+                div.innerText = catalog[ent.type].label;
+
+                if (state.selectedEntityId === ent.id) {
+                    div.classList.add('selected');
+                }
+
+                div.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Évite de déclencher le placement du clic de carte
+                    state.selectedEntityId = ent.id;
+                    updateInspector();
+                    renderEntities();
+                });
+
+                layer.appendChild(div);
+            });
+
+            updateNetworkLines();
+        }
+
+        // Détermine l'état d'un appareil : s'il est lié à un nœud corrompu/offline, il hérite de son état.
+        function getEntityEffectiveState(ent) {
+            if (ent.type === 'network_node' || !ent.networkId) {
+                return ent.state;
+            }
+            const parentNode = state.entities.find(e => e.id === ent.networkId);
+            if (parentNode && parentNode.state !== 'active') {
+                return parentNode.state; // Cascade : hérite du statut hacked ou offline du nœud maître
+            }
+            return ent.state;
+        }
+
+        function updateNetworkLines() {
+            const svg = document.getElementById('network-lines');
+            svg.innerHTML = '';
+
+            const currentEntities = state.entities.filter(e => e.level === state.currentLevel);
+            
+            currentEntities.forEach(ent => {
+                if (ent.type !== 'network_node' && ent.networkId) {
+                    const node = currentEntities.find(n => n.id === ent.networkId);
+                    if (node) {
+                        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                        line.className = 'network-cable';
+                        line.setAttribute('x1', `${ent.x}%`);
+                        line.setAttribute('y1', `${ent.y}%`);
+                        line.setAttribute('x2', `${node.x}%`);
+                        line.setAttribute('y2', `${node.y}%`);
+
+                        // Changement de style visuel du flux de données selon la santé du réseau
+                        const effectiveState = getEntityEffectiveState(node);
+                        if (effectiveState === 'active') {
+                            line.setAttribute('stroke', 'rgba(74, 246, 38, 0.4)');
+                        } else if (effectiveState === 'hacked') {
+                            line.setAttribute('stroke', 'rgba(255, 179, 0, 0.6)');
+                        } else {
+                            line.setAttribute('stroke', 'rgba(82, 120, 116, 0.2)');
+                        }
+                        line.setAttribute('stroke-width', '1.5');
+                        svg.appendChild(line);
+                    }
+                }
+            });
+        }
+
+        // --- MISE À JOUR DE L'INSPECTEUR (INTERFACE DROITE) ---
+        function updateInspector() {
+            const emptyPrompt = document.getElementById('inspector-empty');
+            const content = document.getElementById('inspector-content');
+
+            if (!state.selectedEntityId) {
+                emptyPrompt.style.display = 'block';
+                content.style.display = 'none';
+                return;
+            }
+
+            const ent = state.entities.find(e => e.id === state.selectedEntityId);
+            if (!ent) return;
+
+            emptyPrompt.style.display = 'none';
+            content.style.display = 'block';
+
+            document.getElementById('ins-type').innerText = ent.type.toUpperCase();
+            document.getElementById('ins-name').value = ent.name;
+            document.getElementById('ins-state').value = ent.state;
+
+            const netContainer = document.getElementById('ins-network-container');
+            const netSelect = document.getElementById('ins-network');
+
+            if (ent.type === 'network_node') {
+                netContainer.style.display = 'none'; // Un nœud réseau ne s'auto-connecte pas
+            } else {
+                netContainer.style.display = 'flex';
+                netSelect.innerHTML = '<option value="">[Aucun - Autonome]</option>';
+                
+                // Chercher les nœuds réseaux disponibles sur le MÊME niveau
+                const nodes = state.entities.filter(e => e.type === 'network_node' && e.level === state.currentLevel);
+                nodes.forEach(n => {
+                    const opt = document.createElement('option');
+                    opt.value = n.id;
+                    opt.innerText = n.name;
+                    if (ent.networkId === n.id) opt.selected = true;
+                    netSelect.appendChild(opt);
+                });
+            }
+        }
+
+        // --- LOGIQUE DE MODIFICATION DES DONNÉES ---
+        function updateSelectedName(val) {
+            const ent = state.entities.find(e => e.id === state.selectedEntityId);
+            if (ent) ent.name = val;
+        }
+
+        function updateSelectedState(val) {
+            const ent = state.entities.find(e => e.id === state.selectedEntityId);
+            if (ent) {
+                ent.state = val;
+                renderEntities(); // Met à jour le style visuel et les cascades instantanément
+            }
+        }
+
+        function updateSelectedNetwork(val) {
+            const ent = state.entities.find(e => e.id === state.selectedEntityId);
+            if (ent) {
+                ent.networkId = val;
+                renderEntities();
+            }
+        }
+
+        function deleteSelectedEntity() {
+            state.entities = state.entities.filter(e => e.id !== state.selectedEntityId);
+            // Si c'était un nœud réseau, déconnecter les enfants
+            state.entities.forEach(e => {
+                if (e.networkId === state.selectedEntityId) e.networkId = '';
+            });
+            state.selectedEntityId = null;
+            renderEntities();
+            updateInspector();
+        }
+
+        // Redessiner les lignes si la fenêtre change de taille pour garder les calculs synchrones
+        window.addEventListener('resize', updateNetworkLines);
+    </script>
+</body>
+</html>

@@ -1,0 +1,351 @@
+/* ============================================================
+   Shadowrun Bank Planner — style extrait du POC (test.html)
+   + ajouts phases 1-2 : éditeur de pièces, grille logique
+   ============================================================ */
+
+:root {
+    --bg-dark: #03070d;
+    --bg-panel: #0a111a;
+    --grid-line: rgba(0, 210, 255, 0.05);
+    --primary: #00d2ff;
+    --success: #4af626;
+    --danger: #ff2a2a;
+    --warning: #ffb300;
+    --purple: #bd00ff;
+    --text-main: #c8e6c9;
+    --text-muted: #527874;
+}
+
+* { box-sizing: border-box; user-select: none; }
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: 'Share Tech Mono', monospace;
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--primary);
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+}
+
+h1 { margin: 0; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2px; color: var(--primary); }
+
+.header-right { display: flex; align-items: center; gap: 20px; }
+
+#save-status { color: var(--text-muted); font-size: 0.85rem; }
+#save-status.saving { color: var(--warning); }
+#save-status.saved { color: var(--success); }
+#save-status.error { color: var(--danger); }
+
+#status-ticker { color: var(--success); }
+
+/* --- Auth (phase 3) --- */
+#auth-user { color: var(--text-muted); font-size: 0.8rem; }
+
+#auth-btn, #preview-btn {
+    background: transparent;
+    border: 1px solid rgba(0, 210, 255, 0.4);
+    color: var(--primary);
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+#auth-btn:hover, #preview-btn:hover {
+    background: rgba(0, 210, 255, 0.15);
+    box-shadow: 0 0 8px rgba(0, 210, 255, 0.4);
+}
+
+/* --- Prévisualisation MJ (phase 4) : cadre orangé = vue filtrée --- */
+body.preview-mode #preview-btn {
+    border-color: var(--warning);
+    color: var(--warning);
+    background: rgba(255, 179, 0, 0.08);
+}
+body.preview-mode .map-wrapper { border-color: var(--warning); }
+
+/* --- Mode joueur (cloud actif, pas de session admin) --- */
+body.player-mode #tools-panel { display: none; }
+body.player-mode .app-container { grid-template-columns: 1fr 300px; }
+
+.app-container {
+    display: grid;
+    grid-template-columns: 250px 1fr 300px;
+    gap: 15px;
+    flex: 1;
+    min-height: 0;
+}
+
+/* Panneaux Latéraux */
+.panel {
+    background: var(--bg-panel);
+    border: 1px solid rgba(0, 210, 255, 0.2);
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+}
+
+.panel-title {
+    text-transform: uppercase;
+    font-size: 0.9rem;
+    color: var(--primary);
+    border-bottom: 1px dashed rgba(0, 210, 255, 0.3);
+    padding-bottom: 5px;
+    margin-bottom: 5px;
+}
+
+/* Palette d'outils */
+.tool-btn {
+    background: transparent;
+    border: 1px solid var(--text-muted);
+    color: var(--text-main);
+    padding: 8px 10px;
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.tool-btn:hover, .tool-btn.active {
+    border-color: var(--primary);
+    background: rgba(0, 210, 255, 0.1);
+    box-shadow: 0 0 8px rgba(0, 210, 255, 0.3);
+}
+
+.tool-btn .icon-preview { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+.tool-option { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-muted); }
+.tool-option input[type="checkbox"] { accent-color: var(--primary); }
+
+/* Centre : Zone de Carte */
+.center-zone { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+
+.tabs { display: flex; gap: 10px; flex-wrap: wrap; }
+.tab-btn {
+    background: transparent;
+    border: 1px solid var(--primary);
+    color: var(--primary);
+    padding: 8px 16px;
+    cursor: pointer;
+    font-family: inherit;
+    text-transform: uppercase;
+}
+.tab-btn.active { background: var(--primary); color: var(--bg-dark); font-weight: bold; }
+.tab-btn.tab-add { border-style: dashed; color: var(--text-muted); border-color: var(--text-muted); }
+.tab-btn.tab-add:hover { color: var(--primary); border-color: var(--primary); }
+/* Étage encore caché aux joueurs (vue MJ) */
+.tab-btn.tab-hidden { border-style: dashed; opacity: 0.65; }
+.tab-btn.tab-hidden.active { opacity: 1; }
+
+.map-wrapper {
+    position: relative;
+    flex: 1;
+    border: 2px solid var(--primary);
+    background: rgba(0, 0, 0, 0.4);
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* Plateau : grille logique mise à l'échelle, centré dans le wrapper */
+#board {
+    position: absolute;
+    /* dimensions et position calculées par map.js */
+    background-image: linear-gradient(var(--grid-line) 1px, transparent 1px),
+                      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    /* background-size calculé par map.js (= taille de case) */
+}
+
+/* Couche des pièces (cases peintes) */
+#rooms-layer {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 2;
+}
+
+.room-cell { position: absolute; pointer-events: none; }
+
+.room-label {
+    position: absolute;
+    pointer-events: none;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+    z-index: 3;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
+}
+
+/* Couche SVG : cônes de vision, chemins de ronde, câbles réseau */
+#overlay-svg {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 4;
+}
+
+/* Couche des entités interactives */
+#entities-layer {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 5;
+}
+#entities-layer.pass-through { pointer-events: none; }
+#entities-layer.pass-through .entity { pointer-events: none; }
+
+/* Icônes d'entités */
+.entity {
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    font-weight: bold;
+    border: 2px solid transparent;
+    background: rgba(3, 7, 13, 0.75);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
+    transition: box-shadow 0.2s;
+}
+.entity:hover, .entity.selected {
+    transform: translate(-50%, -50%) scale(1.3);
+    z-index: 100;
+    box-shadow: 0 0 15px currentColor;
+}
+.entity.dragging { transition: none; animation: none !important; }
+
+/* Éléments encore cachés aux joueurs (vue MJ uniquement) */
+.entity.unrevealed { border-style: dashed; opacity: 0.55; }
+.room-label.unrevealed { opacity: 0.55; font-style: italic; }
+
+/* CSS Motion / États des entités */
+.state-active { animation: pulse-slow 2s infinite alternate; }
+.state-hacked { animation: glitch-flicker 0.4s infinite alternate; }
+.state-offline { opacity: 0.4; animation: none !important; }
+
+@keyframes pulse-slow {
+    0% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 5px currentColor; }
+    100% { transform: translate(-50%, -50%) scale(1.1); box-shadow: 0 0 15px currentColor; }
+}
+@keyframes glitch-flicker {
+    0% { opacity: 0.3; transform: translate(-50%, -50%) skewX(-5deg); }
+    100% { opacity: 1; transform: translate(-50%, -50%) skewX(5deg); }
+}
+
+/* Curseurs selon l'outil actif */
+.map-wrapper.tool-paint, .map-wrapper.tool-erase { cursor: crosshair; }
+.map-wrapper.tool-place { cursor: copy; }
+.map-wrapper.tool-patrol { cursor: crosshair; }
+
+/* Formulaires Inspector */
+.inspector-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 10px;
+}
+.inspector-field label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; }
+
+select, input[type="text"], input[type="number"], textarea {
+    background: var(--bg-dark);
+    border: 1px solid var(--primary);
+    color: var(--text-main);
+    padding: 8px;
+    font-family: inherit;
+    width: 100%;
+}
+textarea { resize: vertical; min-height: 60px; user-select: text; }
+input[type="text"], input[type="number"] { user-select: text; }
+
+.ins-section-title {
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    color: var(--primary);
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+}
+
+.ins-type-badge { font-weight: bold; color: var(--primary); }
+
+.btn-action {
+    background: transparent;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    padding: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    text-transform: uppercase;
+    width: 100%;
+}
+.btn-action:hover { background: var(--danger); color: var(--bg-dark); }
+
+.btn-secondary {
+    background: transparent;
+    border: 1px solid var(--primary);
+    color: var(--primary);
+    padding: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    text-transform: uppercase;
+}
+.btn-secondary:hover { background: rgba(0, 210, 255, 0.15); }
+
+/* Toggle 👁 Révélé / Caché (phase 4) */
+.btn-reveal {
+    background: transparent;
+    border: 1px dashed var(--text-muted);
+    color: var(--text-muted);
+    padding: 8px;
+    cursor: pointer;
+    font-family: inherit;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    width: 100%;
+    margin-bottom: 10px;
+    transition: all 0.2s;
+}
+.btn-reveal:hover { border-color: var(--text-main); color: var(--text-main); }
+.btn-reveal.revealed {
+    border: 1px solid var(--success);
+    color: var(--success);
+    background: rgba(74, 246, 38, 0.06);
+}
+.btn-reveal.revealed:hover { box-shadow: 0 0 8px rgba(74, 246, 38, 0.4); }
+
+.btn-row { display: flex; gap: 8px; }
+.btn-row > * { flex: 1; }
+
+hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin: 15px 0; width: 100%; }
+
+.inspector-hint { color: var(--text-muted); font-style: italic; font-size: 0.85rem; }
+
+/* Animation des câbles réseau SVG */
+.network-cable {
+    stroke-dasharray: 6;
+    animation: data-flow 1.5s linear infinite;
+}
+@keyframes data-flow {
+    to { stroke-dashoffset: -20; }
+}

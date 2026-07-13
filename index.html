@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shadowrun Bank Planner :: Overlord_View</title>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <header>
+        <h1>[OVERLORD_TOPOLOGY] :: Surveillance Réseau Banque</h1>
+        <div class="header-right">
+            <span id="save-status"></span>
+            <div id="status-ticker">SYSTEM_BOOT…</div>
+            <button id="preview-btn" style="display:none;">👁 Vue joueurs</button>
+            <span id="auth-user"></span>
+            <button id="auth-btn" style="display:none;">🔑 Admin</button>
+        </div>
+    </header>
+
+    <div class="app-container">
+        <!-- Palette d'outils (générée par editor.js) -->
+        <div class="panel" id="tools-panel">
+            <div class="panel-title">Structure</div>
+            <div id="tools-structure" style="display:flex; flex-direction:column; gap:10px;"></div>
+            <div class="panel-title" style="margin-top:10px;">Dispositifs</div>
+            <div id="tools-entities" style="display:flex; flex-direction:column; gap:10px;"></div>
+        </div>
+
+        <!-- Carte -->
+        <div class="center-zone">
+            <div class="tabs" id="floor-tabs"></div>
+            <div class="map-wrapper" id="map-wrapper">
+                <div id="board">
+                    <div id="rooms-layer"></div>
+                    <svg id="overlay-svg"></svg>
+                    <div id="entities-layer"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Inspecteur (contenu généré par inspector.js) -->
+        <div class="panel" id="inspector-panel">
+            <div class="panel-title">Inspecteur</div>
+            <div id="inspector-body"></div>
+        </div>
+    </div>
+
+    <script src="js/store.js"></script>
+    <script src="js/anim.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/inspector.js"></script>
+    <script src="js/editor.js"></script>
+    <script src="js/main.js"></script>
+    <!-- Firebase (phase 3) : module ES ; en cas d'échec de chargement
+         (file://, hors-ligne), l'appli reste en mode localStorage. -->
+    <script type="module" src="js/cloud.js"></script>
+</body>
+</html>
