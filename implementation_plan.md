@@ -240,9 +240,15 @@ des cônes utilise TOUS les murs (géométrie réelle, révélée ou non). Toggl
 orangé, étage courant restauré en sortie). Inspecteur joueur : nom/type/état/note + ronde et
 cône seulement si révélés. Vérifié le 2026-07-13 : 71/71 tests smoke en Edge headless.
 
-**Phase 5 — Déploiement**
-Init git, push sur `Ethoril/shadowrunbank`, activation GitHub Pages, règles Firestore en console,
-test croisé (MJ édite sur un poste, joueur voit en live sur un autre).
+**Phase 5 — Déploiement** ✔ *(réalisée le 2026-07-13)*
+Repo git initialisé (`.claude/` ignoré), poussé sur `Ethoril/shadowrunbank`, GitHub Pages activé
+via l'API (branche `main`, racine) → **https://ethoril.github.io/shadowrunbank/**. Vérifié le
+2026-07-13 : site en ligne (HTTP 200, boot en mode joueur), suite smoke 71/71 PASS exécutée sur
+l'URL déployée, règles Firestore actives en prod (lecture publique OK, écriture anonyme 403).
+Reste au MJ : ajouter `ethoril.github.io` aux domaines autorisés Firebase Auth, puis 1er login
+admin **depuis `localhost:8000`** pour publier le plan de dev (`plans/main` n'existe pas encore ;
+la migration pousse le `localStorage` de l'origine courante — un login sur le site déployé
+publierait le plan par défaut). Test croisé MJ/joueur à faire à ce moment-là.
 
 ## Actions côté MJ (bloquantes pour la phase 3)
 
