@@ -21,12 +21,28 @@
     </header>
 
     <div class="app-container">
-        <!-- Palette d'outils (générée par editor.js) -->
+        <!-- Palette d'outils (générée par editor.js) + arbre de visibilité (visibility.js) -->
         <div class="panel" id="tools-panel">
-            <div class="panel-title">Structure</div>
-            <div id="tools-structure" style="display:flex; flex-direction:column; gap:10px;"></div>
-            <div class="panel-title" style="margin-top:10px;">Dispositifs</div>
-            <div id="tools-entities" style="display:flex; flex-direction:column; gap:10px;"></div>
+            <div class="panel-tabs">
+                <button class="panel-tab active" data-tab="tools">Outils</button>
+                <button class="panel-tab" data-tab="visibility">Visibilité</button>
+            </div>
+
+            <div id="tab-tools" class="panel-tab-content">
+                <div class="panel-title">Structure</div>
+                <div id="tools-structure" style="display:flex; flex-direction:column; gap:10px;"></div>
+                <div class="panel-title" style="margin-top:10px;">Dispositifs</div>
+                <div id="tools-entities" style="display:flex; flex-direction:column; gap:10px;"></div>
+            </div>
+
+            <div id="tab-visibility" class="panel-tab-content" style="display:none;">
+                <div class="panel-title">Visibilité joueurs</div>
+                <div class="vis-actions">
+                    <button class="btn-secondary" id="vis-reveal-all">👁 Tout révéler</button>
+                    <button class="btn-secondary" id="vis-hide-all">🚫 Tout cacher</button>
+                </div>
+                <div id="visibility-tree"></div>
+            </div>
         </div>
 
         <!-- Carte -->
@@ -53,6 +69,7 @@
     <script src="js/map.js"></script>
     <script src="js/inspector.js"></script>
     <script src="js/editor.js"></script>
+    <script src="js/visibility.js"></script>
     <script src="js/main.js"></script>
     <!-- Firebase (phase 3) : module ES ; en cas d'échec de chargement
          (file://, hors-ligne), l'appli reste en mode localStorage. -->
