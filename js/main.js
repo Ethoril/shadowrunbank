@@ -18,6 +18,7 @@ const App = (() => {
         Editor.renderTools();
         MapView.render();
         Inspector.render();
+        Visibility.render();
     }
 
     /* Classes du body + bouton de prévisualisation selon la vue courante */
@@ -163,6 +164,7 @@ const App = (() => {
 
         Editor.wireBoard();
         Editor.wireKeyboard();
+        Visibility.init();
 
         const previewBtn = document.getElementById('preview-btn');
         if (previewBtn) previewBtn.addEventListener('click', togglePreview);

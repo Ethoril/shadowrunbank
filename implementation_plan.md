@@ -239,6 +239,10 @@ des cônes utilise TOUS les murs (géométrie réelle, révélée ou non). Toggl
 (pointillés/atténués). Prévisualisation via bouton « 👁 Vue joueurs » dans le header (cadre
 orangé, étage courant restauré en sortie). Inspecteur joueur : nom/type/état/note + ronde et
 cône seulement si révélés. Vérifié le 2026-07-13 : 71/71 tests smoke en Edge headless.
+Ajout (2026-07-14) : onglet **« Visibilité »** dans le panneau de gauche (`js/visibility.js`) —
+arbre repliable Étage → Pièce → Dispositif → (Ronde / Cône) avec un œil 👁/🚫 par ligne pour
+révéler/cacher sans sélectionner sur la carte, + boutons « Tout révéler / Tout cacher ». Clic sur
+un libellé = sélection de l'élément sur la carte. Masqué en vue joueur/prévisualisation.
 
 **Phase 5 — Déploiement** ✔ *(réalisée le 2026-07-13)*
 Repo git initialisé (`.claude/` ignoré), poussé sur `Ethoril/shadowrunbank`, GitHub Pages activé
