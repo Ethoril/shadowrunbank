@@ -47,11 +47,11 @@ const Anim = (() => {
         return { x: last.x, y: last.y };
     }
 
-    /* Azimut du cône à l'instant `now` : statique, ou onde triangle
+    /* Azimut d'une couverture à l'instant `now` : statique, ou onde triangle
        entre sweep.from et sweep.to sur sweep.period secondes. */
-    function sweepDirection(vision, now) {
-        const s = vision.sweep;
-        if (!s) return vision.direction;
+    function sweepDirection(coverage, now) {
+        const s = coverage.sweep;
+        if (!s) return coverage.direction;
         const period = Math.max(0.5, s.period || 8);
         let phase = (((now - (s.anchorAt || 0)) / 1000) % period) / period;
         if (phase < 0) phase += 1;
@@ -61,7 +61,9 @@ const Anim = (() => {
 
     /* Position effective d'une entité : animée si en ronde, sinon x/y stockés */
     function effectivePos(ent, now) {
-        if (ent.patrol && ent.patrol.moving && ent.patrol.points.length >= 2) {
+        const state = Store.getEffectiveState(ent);
+        const blocked = state === 'offline' || state === 'neutralized';
+        if (!blocked && ent.patrol && ent.patrol.moving && ent.patrol.points.length >= 2) {
             const pos = patrolPosition(ent.patrol, now);
             if (pos) return pos;
         }
@@ -76,21 +78,23 @@ const Anim = (() => {
         const now = Date.now();
         const floor = Store.currentFloor();
         if (floor) {
-            let moved = false, needCones = false;
+            let moved = false, needCoverages = false;
             Store.floorEntities(floor.id).forEach(ent => {
-                if (ent.patrol && ent.patrol.moving && ent.patrol.points.length >= 2) {
+                const state = Store.getEffectiveState(ent);
+                const patrolBlocked = state === 'offline' || state === 'neutralized';
+                if (!patrolBlocked && ent.patrol && ent.patrol.moving && ent.patrol.points.length >= 2) {
                     const pos = patrolPosition(ent.patrol, now);
                     if (pos) MapView.setEntityScreenPos(ent.id, pos.x, pos.y);
                     moved = true;
-                    if (ent.vision) needCones = true;
+                    if (ent.coverage) needCoverages = true;
                 }
-                if (ent.vision && ent.vision.sweep && Store.getEffectiveState(ent) !== 'offline') {
-                    needCones = true;
+                if (ent.coverage && ent.coverage.sweep && Store.getEffectiveState(ent) !== 'offline') {
+                    needCoverages = true;
                 }
             });
             if (moved) MapView.renderCables(now);
-            if (needCones && now - lastConeAt > 33) { // ~30 fps pour le raycasting
-                MapView.renderCones(now);
+            if (needCoverages && now - lastConeAt > 33) { // ~30 fps pour le rendu
+                MapView.renderCoverages(now);
                 lastConeAt = now;
             }
         }

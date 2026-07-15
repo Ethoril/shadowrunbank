@@ -7,11 +7,32 @@
 
 const Store = (() => {
     const STORAGE_KEY = 'shadowrunbank_plan_v1';
+    const MIGRATION_BACKUP_PREFIX = 'shadowrunbank_plan_backup_';
+    const DIRTY_KEY = 'shadowrunbank_plan_dirty_v2';
+    const TOKENS_KEY = 'shadowrunbank_tokens_v1';
+    const DISCOVERIES_KEY = 'shadowrunbank_discoveries_v1';
+    const CURRENT_SCHEMA_VERSION = 2;
     const SAVE_DEBOUNCE_MS = 800;
+    const HISTORY_LIMIT = 50;
+    const BACKUP_LIMIT = 15;
 
     let plan = null;
     let saveTimer = null;
     let cloudActive = false; // true dès que main.js a branché window.Cloud
+    let dirty = false;
+    let saveInFlight = false;
+    let saveQueued = false;
+    let queuedForce = false;
+    let activeSavePromise = Promise.resolve();
+    let conflict = null;
+    let tokens = [];
+    let discoveries = [];
+    let historyPast = [];
+    let historyFuture = [];
+    let historyBaseline = null;
+    let transactionDepth = 0;
+    let transactionBefore = null;
+    let transactionLabel = '';
 
     /* --- État UI (non persisté) --- */
     const ui = {
@@ -28,6 +49,351 @@ const Store = (() => {
         return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
     }
 
+    function cloneData(value) {
+        return JSON.parse(JSON.stringify(value));
+    }
+
+    function comparablePlan(value) {
+        if (!value) return '';
+        const copy = cloneData(value);
+        delete copy.updatedAt;
+        delete copy.revision;
+        return JSON.stringify(copy);
+    }
+
+    function plansDiffer(a, b) {
+        return comparablePlan(a) !== comparablePlan(b);
+    }
+
+    function isPlainObject(value) {
+        return !!value && typeof value === 'object' && !Array.isArray(value);
+    }
+
+    function clampNumber(value, min, max, fallback) {
+        const number = Number(value);
+        if (!Number.isFinite(number)) return fallback;
+        return Math.min(max, Math.max(min, number));
+    }
+
+    const COVERAGE_SHAPES = ['cone', 'beam', 'rectangle', 'circle', 'threshold'];
+    const COVERAGE_CHANNELS = ['optical', 'infrared', 'laser', 'magnetic', 'pressure', 'astral'];
+
+    function coverageDefaults(ent, source) {
+        const definition = typeof EntityCatalog !== 'undefined'
+            ? EntityCatalog.get(ent.type) : { coverageType: 'cone', coverageChannel: 'optical' };
+        const legacy = isPlainObject(source) ? source : {};
+        const preset = isPlainObject(definition.defaultCoverage) ? definition.defaultCoverage : {};
+        const defaultShape = COVERAGE_SHAPES.includes(definition.coverageType)
+            ? definition.coverageType : 'cone';
+        const shape = COVERAGE_SHAPES.includes(legacy.shape) ? legacy.shape : defaultShape;
+        const defaultChannel = COVERAGE_CHANNELS.includes(definition.coverageChannel)
+            ? definition.coverageChannel : 'optical';
+        return {
+            shape,
+            channel: COVERAGE_CHANNELS.includes(legacy.channel) ? legacy.channel : defaultChannel,
+            direction: clampNumber(legacy.direction, -360, 360, preset.direction || 0),
+            angle: clampNumber(legacy.angle, 10, 180, preset.angle || 60),
+            range: clampNumber(legacy.range, 0.5, 30,
+                preset.range || (shape === 'threshold' ? 1 : 6)),
+            width: clampNumber(legacy.width, 0.25, 20,
+                preset.width || (shape === 'rectangle' ? 2 : 1)),
+            radius: clampNumber(legacy.radius, 0.5, 30, preset.radius || 4),
+            sweep: isPlainObject(legacy.sweep) ? {
+                from: clampNumber(legacy.sweep.from, -360, 360, -45),
+                to: clampNumber(legacy.sweep.to, -360, 360, 45),
+                period: clampNumber(legacy.sweep.period, 1, 60, 8),
+                anchorAt: Number.isFinite(legacy.sweep.anchorAt) ? legacy.sweep.anchorAt : Date.now()
+            } : null,
+            revealed: legacy.revealed === true
+        };
+    }
+
+    function normalizeDecor(decor) {
+        const definition = typeof DecorCatalog !== 'undefined'
+            ? DecorCatalog.get(decor.type) : {
+                name: 'Décor', width: 1, height: 1, autoDiscover: true,
+                blocksMovement: false, blocksVision: []
+            };
+        decor.type = typeof decor.type === 'string' ? decor.type : 'visual_element';
+        if (typeof decor.name !== 'string' || !decor.name) decor.name = definition.name;
+        decor.rotation = Math.round(clampNumber(decor.rotation, -360, 360, 0) / 90) * 90;
+        decor.revealed = decor.revealed === true;
+        decor.autoDiscover = typeof decor.autoDiscover === 'boolean'
+            ? decor.autoDiscover : definition.autoDiscover;
+        decor.blocksMovement = typeof decor.blocksMovement === 'boolean'
+            ? decor.blocksMovement : definition.blocksMovement;
+        const channels = Array.isArray(decor.blocksVision)
+            ? decor.blocksVision : definition.blocksVision;
+        decor.blocksVision = [...new Set(channels.filter(channel => COVERAGE_CHANNELS.includes(channel)))];
+        if (typeof decor.privateNote !== 'string') {
+            decor.privateNote = typeof decor.note === 'string' ? decor.note : '';
+        }
+        if (typeof decor.playerInfo !== 'string') decor.playerInfo = '';
+        delete decor.note;
+        return decor;
+    }
+
+    const TRANSITION_TYPES = ['stairs', 'elevator', 'ladder', 'hatch', 'passage'];
+
+    function normalizeTransition(transition, grid) {
+        transition.type = TRANSITION_TYPES.includes(transition.type) ? transition.type : 'stairs';
+        if (typeof transition.name !== 'string' || !transition.name) transition.name = 'Nouvelle liaison';
+        transition.bidirectional = transition.bidirectional !== false;
+        transition.state = transition.state === 'offline' ? 'offline' : 'active';
+        transition.revealed = transition.revealed === true;
+        transition.accessEntityId = typeof transition.accessEntityId === 'string'
+            ? transition.accessEntityId : '';
+        transition.endpoints = Array.isArray(transition.endpoints) ? transition.endpoints : [];
+        transition.endpoints = transition.endpoints.filter(isPlainObject).map(endpoint => ({
+            id: typeof endpoint.id === 'string' && endpoint.id ? endpoint.id : uid('ep'),
+            floorId: typeof endpoint.floorId === 'string' ? endpoint.floorId : '',
+            x: clampNumber(endpoint.x, 0.5, Math.max(0.5, grid.cols - 0.5), 0.5),
+            y: clampNumber(endpoint.y, 0.5, Math.max(0.5, grid.rows - 0.5), 0.5),
+            label: typeof endpoint.label === 'string' ? endpoint.label : ''
+        }));
+        return transition;
+    }
+
+    function normalizeToken(token) {
+        const grid = plan ? plan.grid : { cols: 24, rows: 16 };
+        return {
+            id: typeof token.id === 'string' && token.id ? token.id : uid('token'),
+            name: typeof token.name === 'string' && token.name ? token.name : 'Runner',
+            shortLabel: typeof token.shortLabel === 'string' && token.shortLabel
+                ? token.shortLabel.slice(0, 3).toUpperCase() : 'PJ',
+            color: /^#[0-9a-f]{6}$/i.test(token.color || '') ? token.color : '#00d2ff',
+            icon: typeof token.icon === 'string' ? token.icon : 'runner',
+            floorId: typeof token.floorId === 'string' ? token.floorId : '',
+            x: clampNumber(token.x, 0.5, Math.max(0.5, grid.cols - 0.5), 0.5),
+            y: clampNumber(token.y, 0.5, Math.max(0.5, grid.rows - 0.5), 0.5),
+            playerMovable: token.playerMovable !== false,
+            visible: token.visible !== false,
+            locked: token.locked === true,
+            updatedAt: Number.isFinite(token.updatedAt) ? token.updatedAt : Date.now()
+        };
+    }
+
+    function migratePlan(source) {
+        if (!isPlainObject(source)) throw new Error('Le plan doit être un objet JSON.');
+
+        const inputVersion = source.schemaVersion == null ? 1 : Number(source.schemaVersion);
+        if (!Number.isInteger(inputVersion) || inputVersion < 1) {
+            throw new Error('Version de schéma invalide.');
+        }
+        if (inputVersion > CURRENT_SCHEMA_VERSION) {
+            throw new Error('Ce plan utilise un schéma plus récent que cette application.');
+        }
+
+        const migrated = cloneData(source);
+        const migratedFrom = inputVersion;
+
+        if (inputVersion === 1) {
+            migrated.schemaVersion = 2;
+            migrated.revision = Number.isInteger(migrated.revision) && migrated.revision >= 0
+                ? migrated.revision : 0;
+            migrated.decors = Array.isArray(migrated.decors) ? migrated.decors : [];
+            migrated.transitions = Array.isArray(migrated.transitions) ? migrated.transitions : [];
+            if (Array.isArray(migrated.entities)) {
+                migrated.entities.forEach(ent => {
+                    if (!isPlainObject(ent)) return;
+                    if (typeof ent.privateNote !== 'string') {
+                        ent.privateNote = typeof ent.note === 'string' ? ent.note : '';
+                    }
+                    if (typeof ent.playerInfo !== 'string') ent.playerInfo = '';
+                    delete ent.note;
+                });
+            }
+        }
+
+        migrated.schemaVersion = CURRENT_SCHEMA_VERSION;
+        if (!Number.isInteger(migrated.revision) || migrated.revision < 0) migrated.revision = 0;
+        if (!Array.isArray(migrated.decors)) migrated.decors = [];
+        if (!Array.isArray(migrated.transitions)) migrated.transitions = [];
+        if (Array.isArray(migrated.entities)) {
+            migrated.entities.forEach(ent => {
+                if (!isPlainObject(ent)) return;
+                if (typeof EntityCatalog !== 'undefined') {
+                    ent.type = EntityCatalog.resolveType(ent.type);
+                    const definition = EntityCatalog.get(ent.type);
+                    if (typeof ent.autoDiscover !== 'boolean') ent.autoDiscover = definition.autoDiscover;
+                }
+                if (typeof ent.privateNote !== 'string') {
+                    ent.privateNote = typeof ent.note === 'string' ? ent.note : '';
+                }
+                if (typeof ent.playerInfo !== 'string') ent.playerInfo = '';
+                delete ent.note;
+
+                // Les plans v1 stockaient uniquement un cône dans `vision`.
+                // On le conserve comme sauvegarde de migration, mais tout le
+                // moteur v2 lit désormais la couverture générique.
+                if (!isPlainObject(ent.coverage) && isPlainObject(ent.vision)) {
+                    ent.coverage = coverageDefaults(ent, ent.vision);
+                } else if (isPlainObject(ent.coverage)) {
+                    ent.coverage = coverageDefaults(ent, ent.coverage);
+                }
+            });
+        }
+        migrated.decors.forEach(decor => {
+            if (isPlainObject(decor)) normalizeDecor(decor);
+        });
+
+        const grid = migrated.grid;
+        if (isPlainObject(grid) && Number.isFinite(grid.cols) && Number.isFinite(grid.rows)) {
+            const maxX = Math.max(0.5, grid.cols - 0.5);
+            const maxY = Math.max(0.5, grid.rows - 0.5);
+            (Array.isArray(migrated.entities) ? migrated.entities : []).forEach(ent => {
+                if (!isPlainObject(ent)) return;
+                ent.x = clampNumber(ent.x, 0.5, maxX, 0.5);
+                ent.y = clampNumber(ent.y, 0.5, maxY, 0.5);
+                if (isPlainObject(ent.patrol)) {
+                    ent.patrol.speed = clampNumber(ent.patrol.speed, 0.1, 10, 1);
+                    ent.patrol.loop = ent.patrol.loop !== false;
+                    ent.patrol.moving = ent.patrol.moving === true;
+                    if (Array.isArray(ent.patrol.points)) {
+                        ent.patrol.points.forEach(point => {
+                            if (!isPlainObject(point)) return;
+                            point.x = clampNumber(point.x, 0, grid.cols, 0);
+                            point.y = clampNumber(point.y, 0, grid.rows, 0);
+                        });
+                    }
+                }
+                if (isPlainObject(ent.coverage)) ent.coverage = coverageDefaults(ent, ent.coverage);
+            });
+            migrated.decors.forEach(decor => {
+                if (!isPlainObject(decor)) return;
+                const definition = typeof DecorCatalog !== 'undefined'
+                    ? DecorCatalog.get(decor.type) : { width: 1, height: 1 };
+                decor.x = clampNumber(decor.x, 0, grid.cols, 0);
+                decor.y = clampNumber(decor.y, 0, grid.rows, 0);
+                decor.width = clampNumber(decor.width, 0.5, grid.cols, definition.width || 1);
+                decor.height = clampNumber(decor.height, 0.25, grid.rows, definition.height || 1);
+            });
+            migrated.transitions.forEach(transition => {
+                if (isPlainObject(transition)) normalizeTransition(transition, grid);
+            });
+        }
+
+        return { plan: migrated, migratedFrom };
+    }
+
+    function validatePlan(candidate) {
+        const errors = [];
+        if (!isPlainObject(candidate)) return ['Le plan doit être un objet JSON.'];
+        if (candidate.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+            errors.push('schemaVersion doit valoir ' + CURRENT_SCHEMA_VERSION + '.');
+        }
+        if (!Number.isInteger(candidate.revision) || candidate.revision < 0) {
+            errors.push('revision doit être un entier positif ou nul.');
+        }
+        if (typeof candidate.name !== 'string' || !candidate.name.trim()) {
+            errors.push('name doit être une chaîne non vide.');
+        }
+        if (!Number.isFinite(candidate.updatedAt)) errors.push('updatedAt doit être un nombre.');
+
+        const grid = candidate.grid;
+        if (!isPlainObject(grid)
+            || !Number.isInteger(grid.cols) || grid.cols <= 0
+            || !Number.isInteger(grid.rows) || grid.rows <= 0
+            || !Number.isFinite(grid.cellSize) || grid.cellSize <= 0) {
+            errors.push('grid doit définir cols, rows et cellSize avec des valeurs positives.');
+        }
+
+        ['floors', 'rooms', 'entities', 'decors', 'transitions'].forEach(key => {
+            if (!Array.isArray(candidate[key])) errors.push(key + ' doit être un tableau.');
+        });
+        if (errors.length) return errors;
+
+        const floorIds = new Set();
+        candidate.floors.forEach((floor, index) => {
+            if (!isPlainObject(floor) || typeof floor.id !== 'string' || !floor.id) {
+                errors.push('floors[' + index + '] doit avoir un identifiant.');
+                return;
+            }
+            if (floorIds.has(floor.id)) errors.push('Identifiant d\'étage dupliqué : ' + floor.id + '.');
+            floorIds.add(floor.id);
+        });
+
+        const validateFloorReference = (items, label) => items.forEach((item, index) => {
+            if (!isPlainObject(item) || typeof item.id !== 'string' || !item.id) {
+                errors.push(label + '[' + index + '] doit avoir un identifiant.');
+            }
+            if (!isPlainObject(item) || !floorIds.has(item.floorId)) {
+                errors.push(label + '[' + index + '] référence un étage inconnu.');
+            }
+        });
+        validateFloorReference(candidate.rooms, 'rooms');
+        validateFloorReference(candidate.entities, 'entities');
+        validateFloorReference(candidate.decors, 'decors');
+
+        candidate.rooms.forEach((room, index) => {
+            if (!isPlainObject(room) || !Array.isArray(room.cells)) {
+                errors.push('rooms[' + index + '].cells doit être un tableau.');
+            }
+        });
+        candidate.entities.forEach((ent, index) => {
+            if (!isPlainObject(ent)) return;
+            if (!Number.isFinite(ent.x) || !Number.isFinite(ent.y)) {
+                errors.push('entities[' + index + '] doit avoir des coordonnées numériques.');
+            }
+            if (typeof ent.privateNote !== 'string' || typeof ent.playerInfo !== 'string') {
+                errors.push('entities[' + index + '] doit séparer privateNote et playerInfo.');
+            }
+            if (ent.coverage != null) {
+                if (!isPlainObject(ent.coverage)
+                    || !COVERAGE_SHAPES.includes(ent.coverage.shape)
+                    || !COVERAGE_CHANNELS.includes(ent.coverage.channel)) {
+                    errors.push('entities[' + index + '].coverage doit définir une forme et un canal valides.');
+                } else {
+                    ['direction', 'angle', 'range', 'width', 'radius'].forEach(key => {
+                        if (!Number.isFinite(ent.coverage[key])) {
+                            errors.push('entities[' + index + '].coverage.' + key + ' doit être numérique.');
+                        }
+                    });
+                }
+            }
+        });
+        candidate.decors.forEach((decor, index) => {
+            if (!isPlainObject(decor)) return;
+            if (typeof decor.type !== 'string' || !decor.type
+                || !Number.isFinite(decor.x) || !Number.isFinite(decor.y)
+                || !Number.isFinite(decor.width) || !Number.isFinite(decor.height)
+                || !Number.isFinite(decor.rotation)) {
+                errors.push('decors[' + index + '] doit définir type, position, dimensions et rotation.');
+            }
+            if (!Array.isArray(decor.blocksVision)
+                || decor.blocksVision.some(channel => !COVERAGE_CHANNELS.includes(channel))) {
+                errors.push('decors[' + index + '].blocksVision contient un canal invalide.');
+            }
+            if (typeof decor.privateNote !== 'string' || typeof decor.playerInfo !== 'string') {
+                errors.push('decors[' + index + '] doit séparer privateNote et playerInfo.');
+            }
+        });
+        candidate.transitions.forEach((transition, index) => {
+            if (!isPlainObject(transition) || typeof transition.id !== 'string' || !transition.id
+                || !TRANSITION_TYPES.includes(transition.type)
+                || !Array.isArray(transition.endpoints)) {
+                errors.push('transitions[' + index + '] doit définir un type et des endpoints.');
+                return;
+            }
+            transition.endpoints.forEach((endpoint, endpointIndex) => {
+                if (!isPlainObject(endpoint) || typeof endpoint.id !== 'string'
+                    || !floorIds.has(endpoint.floorId)
+                    || !Number.isFinite(endpoint.x) || !Number.isFinite(endpoint.y)) {
+                    errors.push('transitions[' + index + '].endpoints[' + endpointIndex + '] est invalide.');
+                }
+            });
+        });
+
+        return errors;
+    }
+
+    function preparePlan(source) {
+        const result = migratePlan(source);
+        const errors = validatePlan(result.plan);
+        if (errors.length) throw new Error('Plan invalide : ' + errors.join(' '));
+        return result;
+    }
+
     /* --- Plan par défaut : reprend la banque du POC sur la grille logique 24×16 --- */
     function rect(c0, r0, w, h) {
         const cells = [];
@@ -40,6 +406,8 @@ const Store = (() => {
     function defaultPlan() {
         const f0 = uid('f'), f1 = uid('f'), f2 = uid('f');
         return {
+            schemaVersion: CURRENT_SCHEMA_VERSION,
+            revision: 0,
             name: 'Banque Zürich-Orbital',
             updatedAt: Date.now(),
             grid: { cols: 24, rows: 16, cellSize: 30 },
@@ -62,29 +430,58 @@ const Store = (() => {
                 { id: uid('r'), floorId: f2, name: 'Grande Voûte', hue: 280, cells: rect(9, 5, 14, 6), revealed: false },
                 { id: uid('r'), floorId: f2, name: 'COFFRE 734', hue: 60, cells: rect(9, 11, 14, 4), revealed: false }
             ],
-            entities: []
+            entities: [],
+            decors: [],
+            transitions: []
         };
     }
 
     /* --- Chargement --- */
     function load() {
+        let raw = null;
         try {
-            const raw = localStorage.getItem(STORAGE_KEY);
+            dirty = localStorage.getItem(DIRTY_KEY) === '1';
+            raw = localStorage.getItem(STORAGE_KEY);
             if (raw) {
-                plan = JSON.parse(raw);
+                const parsed = JSON.parse(raw);
+                const prepared = preparePlan(parsed);
+                plan = prepared.plan;
+                if (prepared.migratedFrom < CURRENT_SCHEMA_VERSION) {
+                    localStorage.setItem(MIGRATION_BACKUP_PREFIX + Date.now(), raw);
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(plan));
+                    setDirty(true);
+                }
             }
         } catch (e) {
             console.error('Plan localStorage illisible, réinitialisation.', e);
+            if (raw) {
+                try { localStorage.setItem(MIGRATION_BACKUP_PREFIX + 'invalid_' + Date.now(), raw); }
+                catch (backupError) { /* stockage indisponible */ }
+            }
         }
-        if (!plan || !Array.isArray(plan.floors)) {
+        if (!plan) {
             plan = defaultPlan();
+        }
+        pruneBackups();
+        try {
+            const storedTokens = JSON.parse(localStorage.getItem(TOKENS_KEY) || '[]');
+            tokens = Array.isArray(storedTokens) ? storedTokens.map(normalizeToken) : [];
+        } catch (error) {
+            tokens = [];
+        }
+        try {
+            const storedDiscoveries = JSON.parse(localStorage.getItem(DISCOVERIES_KEY) || '[]');
+            discoveries = Array.isArray(storedDiscoveries) ? storedDiscoveries.filter(isPlainObject) : [];
+        } catch (error) {
+            discoveries = [];
         }
         const first = sortedFloors()[0];
         ui.currentFloorId = first ? first.id : null;
+        resetHistory();
         return plan;
     }
 
-    /* --- Sauvegarde (debounce) --- */
+    /* --- Sauvegarde locale et file cloud séquentielle --- */
     function setSaveStatus(status, text) {
         const el = document.getElementById('save-status');
         if (!el) return;
@@ -92,29 +489,329 @@ const Store = (() => {
         el.textContent = text;
     }
 
-    function touch() {
+    function notifyHistoryChange() {
+        if (typeof document.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            document.dispatchEvent(new CustomEvent('history-change', { detail: getHistoryState() }));
+        }
+    }
+
+    function resetHistory() {
+        historyPast = [];
+        historyFuture = [];
+        transactionDepth = 0;
+        transactionBefore = null;
+        transactionLabel = '';
+        historyBaseline = plan ? cloneData(plan) : null;
+        notifyHistoryChange();
+    }
+
+    function pushHistory(label, before, after) {
+        if (!before || !after || !plansDiffer(before, after)) return false;
+        historyPast.push({
+            label: label || 'Modification',
+            before: cloneData(before),
+            after: cloneData(after)
+        });
+        if (historyPast.length > HISTORY_LIMIT) historyPast.shift();
+        historyFuture = [];
+        notifyHistoryChange();
+        return true;
+    }
+
+    function markPlanDirty() {
         plan.updatedAt = Date.now();
-        setSaveStatus('saving', '☁ Sauvegarde…');
+        setDirty(true);
+        setSaveStatus('dirty', '● Modifications locales');
         clearTimeout(saveTimer);
         saveTimer = setTimeout(saveNow, SAVE_DEBOUNCE_MS);
     }
 
-    function saveNow() {
+    /* `touch` est appelé après une mutation. Le baseline conserve donc l'état
+       précédent ; une transaction permet de regrouper peinture, drag ou saisie. */
+    function touch(label) {
+        markPlanDirty();
+        if (transactionDepth > 0) return;
+        const after = cloneData(plan);
+        pushHistory(label, historyBaseline, after);
+        historyBaseline = after;
+    }
+
+    function beginTransaction(label) {
+        if (ui.readOnly) return false;
+        if (transactionDepth === 0) {
+            transactionBefore = historyBaseline ? cloneData(historyBaseline) : cloneData(plan);
+            transactionLabel = label || 'Modification';
+        }
+        transactionDepth += 1;
+        return true;
+    }
+
+    function endTransaction() {
+        if (transactionDepth === 0) return false;
+        transactionDepth -= 1;
+        if (transactionDepth > 0) return false;
+        const after = cloneData(plan);
+        const changed = pushHistory(transactionLabel, transactionBefore, after);
+        historyBaseline = after;
+        transactionBefore = null;
+        transactionLabel = '';
+        return changed;
+    }
+
+    function cancelTransaction() {
+        if (transactionDepth === 0) return false;
+        transactionDepth = 0;
+        transactionBefore = null;
+        transactionLabel = '';
+        historyBaseline = cloneData(plan);
+        return true;
+    }
+
+    function transaction(label, mutation) {
+        if (!beginTransaction(label)) return false;
+        try {
+            const result = mutation();
+            endTransaction();
+            return result;
+        } catch (error) {
+            cancelTransaction();
+            throw error;
+        }
+    }
+
+    function restoreHistorySnapshot(snapshot) {
+        const revision = Number.isInteger(plan.revision) ? plan.revision : 0;
+        plan = preparePlan(snapshot).plan;
+        plan.revision = revision;
+        repairUiAfterPlanChange();
+        historyBaseline = cloneData(plan);
+        markPlanDirty();
+        persistLocal();
+    }
+
+    function undo() {
+        if (ui.readOnly || transactionDepth > 0 || historyPast.length === 0) return false;
+        const entry = historyPast.pop();
+        historyFuture.push(entry);
+        restoreHistorySnapshot(entry.before);
+        notifyHistoryChange();
+        return entry.label;
+    }
+
+    function redo() {
+        if (ui.readOnly || transactionDepth > 0 || historyFuture.length === 0) return false;
+        const entry = historyFuture.pop();
+        historyPast.push(entry);
+        restoreHistorySnapshot(entry.after);
+        notifyHistoryChange();
+        return entry.label;
+    }
+
+    function getHistoryState() {
+        const undoEntry = historyPast[historyPast.length - 1];
+        const redoEntry = historyFuture[historyFuture.length - 1];
+        return {
+            canUndo: !ui.readOnly && !!undoEntry,
+            canRedo: !ui.readOnly && !!redoEntry,
+            undoLabel: undoEntry ? undoEntry.label : '',
+            redoLabel: redoEntry ? redoEntry.label : '',
+            length: historyPast.length
+        };
+    }
+
+    function setDirty(value) {
+        dirty = !!value;
+        try {
+            if (dirty) localStorage.setItem(DIRTY_KEY, '1');
+            else if (typeof localStorage.removeItem === 'function') localStorage.removeItem(DIRTY_KEY);
+            else localStorage.setItem(DIRTY_KEY, '0');
+        } catch (e) {
+            console.warn('Impossible de mettre à jour le marqueur de sauvegarde.', e);
+        }
+    }
+
+    function persistLocal() {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(plan));
+            return true;
         } catch (e) {
             console.error('Échec de sauvegarde localStorage', e);
+            setSaveStatus('error', '⚠ Sauvegarde locale impossible');
+            return false;
         }
-        if (cloudActive && !ui.readOnly && window.Cloud) {
-            window.Cloud.savePlan(plan)
-                .then(() => setSaveStatus('saved', '☁ Sauvegardé'))
-                .catch(e => {
-                    console.error('Échec de sauvegarde Firestore', e);
-                    setSaveStatus('error', '⚠ Erreur cloud');
+    }
+
+    function dispatchSaveEvent(name, detail) {
+        if (typeof document.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            document.dispatchEvent(new CustomEvent(name, { detail }));
+        }
+    }
+
+    function notifyConflict(remote, source) {
+        conflict = { remote: preparePlan(remote).plan, source: source || 'remote' };
+        setDirty(true);
+        setSaveStatus('conflict', '⚠ Conflit de sauvegarde');
+        dispatchSaveEvent('plan-save-conflict', conflict);
+        return conflict;
+    }
+
+    function saveNow(options) {
+        const force = !!(options && options.force);
+        clearTimeout(saveTimer);
+        saveTimer = null;
+        persistLocal();
+
+        if (!cloudActive || ui.readOnly || !window.Cloud) {
+            setSaveStatus(dirty ? 'offline' : 'saved',
+                dirty ? '💾 Local — cloud en attente' : '💾 Sauvegardé (local)');
+            if (dirty) dispatchSaveEvent('plan-save-offline');
+            return Promise.resolve({ localOnly: true });
+        }
+
+        if (saveInFlight) {
+            saveQueued = true;
+            queuedForce = queuedForce || force;
+            return activeSavePromise;
+        }
+
+        const snapshot = cloneData(plan);
+        saveInFlight = true;
+        conflict = null;
+        setSaveStatus('saving', '☁ Sauvegarde…');
+
+        activeSavePromise = Promise.resolve(window.Cloud.savePlan(snapshot, { force }))
+            .then(result => {
+                const newRevision = result && Number.isInteger(result.revision)
+                    ? result.revision : snapshot.revision + 1;
+                plan.revision = Math.max(plan.revision || 0, newRevision);
+
+                const changedDuringSave = plan.updatedAt !== snapshot.updatedAt;
+                if (changedDuringSave) saveQueued = true;
+                setDirty(changedDuringSave || saveQueued);
+                persistLocal();
+                setSaveStatus(dirty ? 'saving' : 'saved',
+                    dirty ? '☁ Nouvelle sauvegarde en attente…' : '☁ Synchronisé — r' + plan.revision);
+                if (!dirty) dispatchSaveEvent('plan-save-synced', { revision: plan.revision });
+                return { revision: newRevision };
+            })
+            .catch(error => {
+                setDirty(true);
+                if (error && error.code === 'revision-conflict' && error.remotePlan) {
+                    notifyConflict(error.remotePlan, 'transaction');
+                } else {
+                    console.warn('Sauvegarde Firestore différée', error);
+                    setSaveStatus('offline', '⚠ Hors ligne — copie locale conservée');
+                    dispatchSaveEvent('plan-save-offline', { error });
+                }
+                return { error };
+            })
+            .finally(() => {
+                saveInFlight = false;
+                const retry = saveQueued && !conflict;
+                const retryForce = queuedForce;
+                saveQueued = false;
+                queuedForce = false;
+                if (retry) setTimeout(() => saveNow({ force: retryForce }), 0);
+            });
+
+        return activeSavePromise;
+    }
+
+    function handlePageHide() {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+        persistLocal();
+        if (dirty || saveInFlight) setDirty(true);
+    }
+
+    function hasPendingChanges() { return dirty; }
+    function isSaveInFlight() { return saveInFlight; }
+    function getConflict() { return conflict; }
+
+    function markRemoteConflict(remote) {
+        return notifyConflict(remote, 'snapshot');
+    }
+
+    function resolveConflictWithRemote() {
+        if (!conflict) return false;
+        const remote = conflict.remote;
+        conflict = null;
+        applyRemotePlan(remote);
+        return true;
+    }
+
+    function resolveConflictWithLocal() {
+        if (!conflict) return Promise.resolve(false);
+        conflict = null;
+        setDirty(true);
+        return saveNow({ force: true });
+    }
+
+    function backupCurrentPlan(label) {
+        try {
+            const createdAt = Date.now();
+            const safeLabel = String(label || 'manual').replace(/[^a-z0-9_-]+/gi, '-');
+            const key = MIGRATION_BACKUP_PREFIX + safeLabel + '_' + createdAt;
+            localStorage.setItem(key, JSON.stringify(plan));
+            pruneBackups();
+            return key;
+        } catch (error) {
+            console.error('Échec de création de la sauvegarde locale', error);
+            return false;
+        }
+    }
+
+    function listBackups() {
+        const backups = [];
+        for (let index = 0; index < localStorage.length; index += 1) {
+            const key = localStorage.key(index);
+            if (!key || !key.startsWith(MIGRATION_BACKUP_PREFIX)) continue;
+            const suffix = key.slice(MIGRATION_BACKUP_PREFIX.length);
+            const timestamp = suffix.match(/(\d+)$/);
+            const createdAt = timestamp ? Number(timestamp[1]) : 0;
+            const label = timestamp
+                ? suffix.slice(0, -timestamp[1].length).replace(/_$/, '')
+                : suffix;
+            try {
+                const source = JSON.parse(localStorage.getItem(key));
+                backups.push({
+                    key,
+                    label: label || 'migration',
+                    createdAt,
+                    plan: preparePlan(source).plan,
+                    valid: true
                 });
-        } else {
-            setSaveStatus('saved', '💾 Sauvegardé (local)');
+            } catch (error) {
+                backups.push({ key, label: label || 'invalide', createdAt, plan: null, valid: false });
+            }
         }
+        return backups.sort((a, b) => b.createdAt - a.createdAt);
+    }
+
+    function pruneBackups(limit = BACKUP_LIMIT) {
+        listBackups().slice(Math.max(0, limit)).forEach(backup => {
+            localStorage.removeItem(backup.key);
+        });
+    }
+
+    function restoreBackup(key) {
+        const backup = listBackups().find(item => item.key === key);
+        if (!backup || !backup.valid || !backup.plan) return false;
+        const restoredPlan = cloneData(backup.plan);
+        restoredPlan.revision = Number.isInteger(plan.revision) ? plan.revision : 0;
+        backupCurrentPlan('avant-restauration');
+        replacePlan(restoredPlan);
+        return true;
+    }
+
+    function deleteBackup(key) {
+        if (!key || !key.startsWith(MIGRATION_BACKUP_PREFIX)) return false;
+        localStorage.removeItem(key);
+        return true;
+    }
+
+    function exportJson() {
+        return JSON.stringify(plan, null, 2);
     }
 
     /* --- Cloud (phase 3) --- */
@@ -123,8 +820,7 @@ const Store = (() => {
 
     /* Remplace le plan par la version Firestore et répare l'état UI
        (étage courant / sélection / tracé de ronde devenus orphelins). */
-    function applyRemotePlan(remote) {
-        plan = remote;
+    function repairUiAfterPlanChange() {
         if (!plan.floors.find(f => f.id === ui.currentFloorId)) {
             const first = sortedFloors()[0];
             ui.currentFloorId = first ? first.id : null;
@@ -133,13 +829,33 @@ const Store = (() => {
         if (sel) {
             const exists = sel.kind === 'entity' ? findEntity(sel.id)
                 : sel.kind === 'room' ? findRoom(sel.id)
+                : sel.kind === 'decor' ? findDecor(sel.id)
+                : sel.kind === 'token' ? findToken(sel.id)
+                : sel.kind === 'transition' ? findTransition(sel.id)
                 : findFloor(sel.id);
             if (!exists) ui.selection = null;
         }
         if (ui.patrolEditId && !findEntity(ui.patrolEditId)) ui.patrolEditId = null;
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(plan));
-        } catch (e) { /* cache local seulement */ }
+    }
+
+    function applyRemotePlan(remote) {
+        plan = preparePlan(remote).plan;
+        repairUiAfterPlanChange();
+        conflict = null;
+        setDirty(false);
+        persistLocal();
+        resetHistory();
+    }
+
+    function replacePlan(source) {
+        return transaction('Importer un plan', () => {
+            plan = preparePlan(source).plan;
+            repairUiAfterPlanChange();
+            conflict = null;
+            touch('Importer un plan');
+            persistLocal();
+            return plan;
+        });
     }
 
     /* --- Accesseurs --- */
@@ -161,9 +877,129 @@ const Store = (() => {
         return plan.entities.filter(e => e.floorId === floorId);
     }
 
+    function floorDecors(floorId) {
+        return plan.decors.filter(decor => decor.floorId === floorId);
+    }
+
     function findEntity(id) { return plan.entities.find(e => e.id === id); }
     function findRoom(id) { return plan.rooms.find(r => r.id === id); }
+    function findDecor(id) { return plan.decors.find(decor => decor.id === id); }
     function findFloor(id) { return plan.floors.find(f => f.id === id); }
+    function getTokens() { return tokens; }
+    function floorTokens(floorId) { return tokens.filter(token => token.floorId === floorId); }
+    function findToken(id) { return tokens.find(token => token.id === id); }
+    function findTransition(id) { return plan.transitions.find(transition => transition.id === id); }
+
+    function persistTokens() {
+        try { localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens)); }
+        catch (error) { console.warn('Sauvegarde locale des pions impossible', error); }
+    }
+
+    function applyRemoteTokens(remoteTokens) {
+        tokens = Array.isArray(remoteTokens) ? remoteTokens.map(normalizeToken) : [];
+        persistTokens();
+    }
+
+    function saveToken(token) {
+        token.updatedAt = Date.now();
+        persistTokens();
+        if (cloudActive && window.Cloud && typeof window.Cloud.saveToken === 'function' && !ui.readOnly) {
+            return window.Cloud.saveToken(cloneData(token)).catch(error => {
+                console.warn('Configuration du pion conservée localement', error);
+                return { error };
+            });
+        }
+        return Promise.resolve({ localOnly: true });
+    }
+
+    function commitTokenPosition(token) {
+        token.updatedAt = Date.now();
+        persistTokens();
+        if (cloudActive && window.Cloud && typeof window.Cloud.updateTokenPosition === 'function') {
+            return window.Cloud.updateTokenPosition({
+                id: token.id, floorId: token.floorId, x: token.x, y: token.y, updatedAt: token.updatedAt
+            }).catch(error => {
+                console.warn('Position du pion conservée localement', error);
+                return { error };
+            });
+        }
+        return Promise.resolve({ localOnly: true });
+    }
+
+    function addToken(floorId, x, y, name) {
+        const token = normalizeToken({
+            id: uid('token'), name: name || 'Runner ' + (tokens.length + 1),
+            shortLabel: 'PJ', color: '#00d2ff', icon: 'runner', floorId, x, y,
+            playerMovable: true, visible: true, locked: false, updatedAt: Date.now()
+        });
+        tokens.push(token);
+        saveToken(token);
+        return token;
+    }
+
+    function duplicateToken(source) {
+        const token = addToken(source.floorId, source.x + 0.5, source.y + 0.5, source.name + ' copie');
+        token.shortLabel = source.shortLabel;
+        token.color = source.color;
+        token.icon = source.icon;
+        token.playerMovable = source.playerMovable;
+        token.visible = source.visible;
+        token.locked = source.locked;
+        saveToken(token);
+        return token;
+    }
+
+    function deleteToken(tokenId) {
+        tokens = tokens.filter(token => token.id !== tokenId);
+        persistTokens();
+        if (cloudActive && window.Cloud && typeof window.Cloud.deleteToken === 'function' && !ui.readOnly) {
+            window.Cloud.deleteToken(tokenId).catch(error => console.warn('Suppression du pion différée', error));
+        }
+    }
+
+    function discoveryKey(kind, elementId) { return kind + '_' + elementId; }
+    function getDiscoveries() { return discoveries; }
+    function isDiscovered(kind, elementId) {
+        const key = discoveryKey(kind, elementId);
+        return discoveries.some(discovery => discovery.id === key
+            || (discovery.kind === kind && discovery.elementId === elementId));
+    }
+    function isEffectivelyRevealed(item, kind) {
+        return !!(item && (item.revealed || isDiscovered(kind, item.id)));
+    }
+    function persistDiscoveries() {
+        try { localStorage.setItem(DISCOVERIES_KEY, JSON.stringify(discoveries)); }
+        catch (error) { console.warn('Sauvegarde locale des découvertes impossible', error); }
+    }
+    function applyRemoteDiscoveries(remoteDiscoveries) {
+        discoveries = Array.isArray(remoteDiscoveries) ? remoteDiscoveries.filter(isPlainObject) : [];
+        persistDiscoveries();
+    }
+    function addDiscovery(kind, item, tokenId, floorId) {
+        if (!item || isDiscovered(kind, item.id)) return false;
+        const discovery = {
+            id: discoveryKey(kind, item.id), kind, elementId: item.id,
+            floorId: floorId || item.floorId || item.id, discoveredBy: tokenId,
+            discoveredAt: Date.now()
+        };
+        discoveries.push(discovery);
+        persistDiscoveries();
+        if (cloudActive && window.Cloud && typeof window.Cloud.saveDiscovery === 'function') {
+            window.Cloud.saveDiscovery(cloneData(discovery)).catch(error =>
+                console.warn('Découverte conservée localement', error));
+        }
+        return true;
+    }
+    function resetDiscoveries(floorId) {
+        const removed = discoveries.filter(discovery => !floorId || discovery.floorId === floorId);
+        discoveries = discoveries.filter(discovery => floorId && discovery.floorId !== floorId);
+        persistDiscoveries();
+        if (cloudActive && window.Cloud && typeof window.Cloud.deleteDiscoveries === 'function' && !ui.readOnly) {
+            window.Cloud.deleteDiscoveries(removed.map(discovery => discovery.id)).catch(error =>
+                console.warn('Réinitialisation des découvertes différée', error));
+        }
+        return removed.length;
+    }
 
     /* Cascade d'état du POC : un appareil lié à un nœud non-actif hérite de son état */
     function getEffectiveState(ent) {
@@ -173,27 +1009,63 @@ const Store = (() => {
         return ent.state;
     }
 
+    function isPatrolBlockedState(state) {
+        return state === 'offline' || state === 'neutralized';
+    }
+
+    function setEntityState(ent, state) {
+        const affected = [ent];
+        if (ent.type === 'network_node') {
+            plan.entities.forEach(child => {
+                if (child.networkId === ent.id) affected.push(child);
+            });
+        }
+        if (isPatrolBlockedState(state)) {
+            affected.forEach(item => {
+                if (item.patrol && item.patrol.moving) stopPatrol(item);
+            });
+        }
+        ent.state = state;
+        touch();
+    }
+
     /* ============================================================
        Visibilité (phase 4) — vue joueur = mode joueur OU
        prévisualisation MJ : seul ce qui est `revealed` existe.
        Les murs (occlusion des cônes) ne sont PAS filtrés : la
-       géométrie réelle découpe la vision, révélée ou non.
+       géométrie réelle découpe la couverture, révélée ou non.
        ============================================================ */
     function isPlayerView() { return ui.readOnly || ui.preview; }
 
     function visibleFloors() {
         const floors = sortedFloors();
-        return isPlayerView() ? floors.filter(f => f.revealed) : floors;
+        return isPlayerView() ? floors.filter(f => isEffectivelyRevealed(f, 'floor')) : floors;
     }
 
     function visibleRooms(floorId) {
         const rooms = floorRooms(floorId);
-        return isPlayerView() ? rooms.filter(r => r.revealed) : rooms;
+        return isPlayerView() ? rooms.filter(r => isEffectivelyRevealed(r, 'room')) : rooms;
     }
 
     function visibleEntities(floorId) {
         const ents = floorEntities(floorId);
-        return isPlayerView() ? ents.filter(e => e.revealed) : ents;
+        return isPlayerView() ? ents.filter(e => isEffectivelyRevealed(e, 'entity')) : ents;
+    }
+
+    function visibleDecors(floorId) {
+        const decors = floorDecors(floorId);
+        return isPlayerView() ? decors.filter(decor => isEffectivelyRevealed(decor, 'decor')) : decors;
+    }
+
+    function visibleTokens(floorId) {
+        const items = floorTokens(floorId);
+        return isPlayerView() ? items.filter(token => token.visible) : items;
+    }
+
+    function visibleTransitions(floorId) {
+        return plan.transitions.filter(transition =>
+            transition.endpoints.some(endpoint => endpoint.floorId === floorId)
+            && (!isPlayerView() || isEffectivelyRevealed(transition, 'transition')));
     }
 
     /* Répare l'état UI quand la vue change : étage courant absent ou
@@ -206,9 +1078,12 @@ const Store = (() => {
         if (!isPlayerView() || !ui.selection) return;
         const sel = ui.selection;
         let visible = false;
-        if (sel.kind === 'entity') { const e = findEntity(sel.id); visible = !!(e && e.revealed); }
-        else if (sel.kind === 'room') { const r = findRoom(sel.id); visible = !!(r && r.revealed); }
-        else if (sel.kind === 'floor') { const f = findFloor(sel.id); visible = !!(f && f.revealed); }
+        if (sel.kind === 'entity') { const e = findEntity(sel.id); visible = isEffectivelyRevealed(e, 'entity'); }
+        else if (sel.kind === 'room') { const r = findRoom(sel.id); visible = isEffectivelyRevealed(r, 'room'); }
+        else if (sel.kind === 'decor') { const d = findDecor(sel.id); visible = isEffectivelyRevealed(d, 'decor'); }
+        else if (sel.kind === 'floor') { const f = findFloor(sel.id); visible = isEffectivelyRevealed(f, 'floor'); }
+        else if (sel.kind === 'token') { const token = findToken(sel.id); visible = !!(token && token.visible); }
+        else if (sel.kind === 'transition') { const transition = findTransition(sel.id); visible = isEffectivelyRevealed(transition, 'transition'); }
         if (!visible) ui.selection = null;
     }
 
@@ -224,6 +1099,13 @@ const Store = (() => {
     function deleteFloor(floorId) {
         if (plan.floors.length <= 1) return false;
         plan.rooms = plan.rooms.filter(r => r.floorId !== floorId);
+        plan.decors = plan.decors.filter(decor => decor.floorId !== floorId);
+        plan.transitions.forEach(transition => {
+            transition.endpoints = transition.endpoints.filter(endpoint => endpoint.floorId !== floorId);
+        });
+        plan.transitions = plan.transitions.filter(transition => transition.endpoints.length > 0);
+        tokens = tokens.filter(token => token.floorId !== floorId);
+        persistTokens();
         // Déconnecte les appareils liés à des nœuds de l'étage supprimé
         const removedIds = new Set(plan.entities.filter(e => e.floorId === floorId).map(e => e.id));
         plan.entities = plan.entities.filter(e => e.floorId !== floorId);
@@ -308,24 +1190,129 @@ const Store = (() => {
         return floorRooms(floorId).find(r => r.cells.includes(key)) || null;
     }
 
+    /* --- Mutations : décors --- */
+    function addDecor(type, floorId, x, y) {
+        const definition = typeof DecorCatalog !== 'undefined'
+            ? DecorCatalog.get(type) : { name: 'Décor', width: 1, height: 1 };
+        const decor = normalizeDecor({
+            id: uid('d'), floorId, type,
+            name: definition.name,
+            x, y,
+            width: definition.width,
+            height: definition.height,
+            rotation: 0,
+            revealed: false,
+            autoDiscover: definition.autoDiscover,
+            blocksMovement: definition.blocksMovement,
+            blocksVision: [...definition.blocksVision],
+            privateNote: '',
+            playerInfo: ''
+        });
+        plan.decors.push(decor);
+        touch();
+        return decor;
+    }
+
+    function duplicateDecor(source) {
+        if (!source) return null;
+        const decor = cloneData(source);
+        decor.id = uid('d');
+        decor.name = source.name + ' copie';
+        decor.x = clampNumber(source.x + 0.5, 0, plan.grid.cols, source.x);
+        decor.y = clampNumber(source.y + 0.5, 0, plan.grid.rows, source.y);
+        normalizeDecor(decor);
+        plan.decors.push(decor);
+        touch('Dupliquer un décor');
+        return decor;
+    }
+
+    function deleteDecor(decorId) {
+        plan.decors = plan.decors.filter(decor => decor.id !== decorId);
+        touch();
+    }
+
+    /* --- Mutations : transitions multi-étages --- */
+    function addTransition(type, name) {
+        const transition = normalizeTransition({
+            id: uid('tr'), type: type || 'stairs', name: name || 'Nouvelle liaison',
+            bidirectional: true, state: 'active', revealed: false,
+            accessEntityId: '', endpoints: []
+        }, plan.grid);
+        plan.transitions.push(transition);
+        touch();
+        return transition;
+    }
+
+    function addTransitionEndpoint(transition, floorId, x, y, label) {
+        const endpoint = {
+            id: uid('ep'), floorId,
+            x: clampNumber(x, 0.5, Math.max(0.5, plan.grid.cols - 0.5), 0.5),
+            y: clampNumber(y, 0.5, Math.max(0.5, plan.grid.rows - 0.5), 0.5),
+            label: label || (findFloor(floorId) ? findFloor(floorId).name : '')
+        };
+        transition.endpoints.push(endpoint);
+        touch();
+        return endpoint;
+    }
+
+    function removeTransitionEndpoint(transition, endpointId) {
+        transition.endpoints = transition.endpoints.filter(endpoint => endpoint.id !== endpointId);
+        if (transition.endpoints.length === 0) deleteTransition(transition.id);
+        else touch();
+    }
+
+    function deleteTransition(transitionId) {
+        plan.transitions = plan.transitions.filter(transition => transition.id !== transitionId);
+        touch();
+    }
+
     /* --- Mutations : entités --- */
     function addEntity(type, floorId, x, y, defaultName) {
+        const resolvedType = typeof EntityCatalog !== 'undefined'
+            ? EntityCatalog.resolveType(type) : type;
+        const definition = typeof EntityCatalog !== 'undefined'
+            ? EntityCatalog.get(resolvedType) : { autoDiscover: true };
         const ent = {
             id: uid('e'),
             floorId: floorId,
-            type: type,
+            type: resolvedType,
             name: defaultName + '_' + Math.floor(Math.random() * 900 + 100),
             state: 'active',
             networkId: '',
             x: x,
             y: y,
             revealed: false,
-            note: '',
+            autoDiscover: definition.autoDiscover,
+            privateNote: '',
+            playerInfo: '',
             patrol: null,
-            vision: null
+            coverage: null
         };
+        if (definition.coverageType && definition.coverageType !== 'none') {
+            ent.coverage = coverageDefaults(ent, {});
+        }
         plan.entities.push(ent);
         touch();
+        return ent;
+    }
+
+    function duplicateEntity(source) {
+        if (!source) return null;
+        const ent = cloneData(source);
+        ent.id = uid('e');
+        ent.name = source.name + ' copie';
+        ent.x = clampNumber(source.x + 0.5, 0.5, Math.max(0.5, plan.grid.cols - 0.5), source.x);
+        ent.y = clampNumber(source.y + 0.5, 0.5, Math.max(0.5, plan.grid.rows - 0.5), source.y);
+        if (ent.patrol) {
+            ent.patrol.moving = false;
+            ent.patrol.anchorAt = 0;
+            ent.patrol.points = ent.patrol.points.map(point => ({
+                x: clampNumber(point.x + 0.5, 0, plan.grid.cols, point.x),
+                y: clampNumber(point.y + 0.5, 0, plan.grid.rows, point.y)
+            }));
+        }
+        plan.entities.push(ent);
+        touch('Dupliquer un dispositif');
         return ent;
     }
 
@@ -344,13 +1331,49 @@ const Store = (() => {
     }
 
     function clearPatrol(ent) {
-        stopPatrol(ent);
-        ent.patrol = null;
-        touch();
+        return transaction('Effacer une ronde', () => {
+            stopPatrol(ent);
+            ent.patrol = null;
+            touch('Effacer une ronde');
+        });
+    }
+
+    function removePatrolPoint(ent, index) {
+        if (!ent || !ent.patrol || index < 0 || index >= ent.patrol.points.length) return false;
+        return transaction('Supprimer un waypoint', () => {
+            if (ent.patrol.moving) stopPatrol(ent);
+            ent.patrol.points.splice(index, 1);
+            touch('Supprimer un waypoint');
+            return true;
+        });
+    }
+
+    function movePatrolPoint(ent, fromIndex, toIndex) {
+        if (!ent || !ent.patrol || fromIndex < 0 || toIndex < 0
+            || fromIndex >= ent.patrol.points.length || toIndex >= ent.patrol.points.length
+            || fromIndex === toIndex) return false;
+        return transaction('Réordonner les waypoints', () => {
+            if (ent.patrol.moving) stopPatrol(ent);
+            const point = ent.patrol.points.splice(fromIndex, 1)[0];
+            ent.patrol.points.splice(toIndex, 0, point);
+            touch('Réordonner les waypoints');
+            return true;
+        });
+    }
+
+    function reversePatrol(ent) {
+        if (!ent || !ent.patrol || ent.patrol.points.length < 2) return false;
+        return transaction('Inverser la ronde', () => {
+            if (ent.patrol.moving) stopPatrol(ent);
+            ent.patrol.points.reverse();
+            touch('Inverser la ronde');
+            return true;
+        });
     }
 
     function startPatrol(ent) {
         if (!ent.patrol || ent.patrol.points.length < 2) return false;
+        if (isPatrolBlockedState(getEffectiveState(ent))) return false;
         ent.patrol.moving = true;
         ent.patrol.anchorAt = Date.now();
         touch();
@@ -369,34 +1392,72 @@ const Store = (() => {
         touch();
     }
 
-    /* --- Mutations : cônes de vision --- */
-    function createVision(ent) {
-        ent.vision = { direction: 0, angle: 60, range: 6, sweep: null, revealed: false };
+    function setPatrolSpeed(ent, speed, now) {
+        if (!ent.patrol) return false;
+        const nextSpeed = Math.max(0.1, Math.min(10, Number(speed) || 1));
+        const p = ent.patrol;
+        const at = Number.isFinite(now) ? now : Date.now();
+        if (p.moving) {
+            const previousSpeed = p.speed > 0 ? p.speed : 1;
+            const elapsed = (at - (p.anchorAt || at)) / 1000;
+            p.anchorAt = at - (elapsed * previousSpeed / nextSpeed) * 1000;
+        }
+        p.speed = nextSpeed;
         touch();
-        return ent.vision;
+        return true;
     }
 
-    function clearVision(ent) {
-        ent.vision = null;
+    function setPatrolLoop(ent, loop) {
+        if (!ent.patrol) return false;
+        return transaction('Modifier le parcours de ronde', () => {
+            if (ent.patrol.moving) stopPatrol(ent);
+            ent.patrol.loop = !!loop;
+            touch('Modifier le parcours de ronde');
+            return true;
+        });
+    }
+
+    /* --- Mutations : zones de couverture --- */
+    function createCoverage(ent) {
+        ent.coverage = coverageDefaults(ent, {});
+        touch();
+        return ent.coverage;
+    }
+
+    function clearCoverage(ent) {
+        ent.coverage = null;
         touch();
     }
 
-    function setSweep(ent, enabled) {
-        if (!ent.vision) return;
+    function resetCoverage(ent) {
+        const revealed = !!(ent.coverage && ent.coverage.revealed);
+        ent.coverage = coverageDefaults(ent, {});
+        ent.coverage.revealed = revealed;
+        touch('Réinitialiser une couverture');
+        return ent.coverage;
+    }
+
+    function setCoverageSweep(ent, enabled) {
+        if (!ent.coverage) return;
         if (enabled) {
-            ent.vision.sweep = {
-                from: ent.vision.direction - 45,
-                to: ent.vision.direction + 45,
+            ent.coverage.sweep = {
+                from: ent.coverage.direction - 45,
+                to: ent.coverage.direction + 45,
                 period: 8,
                 anchorAt: Date.now()
             };
         } else {
             // fige la direction courante du balayage
-            ent.vision.direction = Math.round(Anim.sweepDirection(ent.vision, Date.now()));
-            ent.vision.sweep = null;
+            ent.coverage.direction = Math.round(Anim.sweepDirection(ent.coverage, Date.now()));
+            ent.coverage.sweep = null;
         }
         touch();
     }
+
+    // Compatibilité temporaire pour les extensions qui utilisaient l'API v1.
+    const createVision = createCoverage;
+    const clearVision = clearCoverage;
+    const setSweep = setCoverageSweep;
 
     function deleteEntity(entityId) {
         plan.entities = plan.entities.filter(e => e.id !== entityId);
@@ -405,15 +1466,33 @@ const Store = (() => {
     }
 
     return {
-        ui, load, touch, saveNow, setSaveStatus,
+        ui, load, touch, saveNow, setSaveStatus, handlePageHide,
+        transaction, beginTransaction, endTransaction, cancelTransaction,
+        undo, redo, getHistoryState, resetHistory,
         setCloudActive, isCloudActive, applyRemotePlan,
-        getPlan, sortedFloors, currentFloor, floorRooms, floorEntities,
-        findEntity, findRoom, findFloor, getEffectiveState,
-        isPlayerView, visibleFloors, visibleRooms, visibleEntities, ensureVisibleView,
+        hasPendingChanges, isSaveInFlight, getConflict, markRemoteConflict,
+        resolveConflictWithRemote, resolveConflictWithLocal,
+        backupCurrentPlan, listBackups, restoreBackup, deleteBackup,
+        exportJson, replacePlan,
+        CURRENT_SCHEMA_VERSION, createDefaultPlan: defaultPlan,
+        migratePlan, validatePlan, preparePlan,
+        getPlan, sortedFloors, currentFloor, floorRooms, floorEntities, floorDecors,
+        getTokens, floorTokens, getDiscoveries,
+        findEntity, findRoom, findDecor, findFloor, findToken, findTransition,
+        getEffectiveState, setEntityState,
+        isPlayerView, isDiscovered, isEffectivelyRevealed,
+        visibleFloors, visibleRooms, visibleEntities, visibleDecors, visibleTokens, visibleTransitions,
+        ensureVisibleView,
+        applyRemoteTokens, saveToken, commitTokenPosition, addToken, duplicateToken, deleteToken,
+        applyRemoteDiscoveries, addDiscovery, resetDiscoveries,
         addFloor, deleteFloor, moveFloor,
         addRoom, paintCell, eraseCell, deleteRoom, roomAt,
-        addEntity, deleteEntity,
+        addDecor, duplicateDecor, deleteDecor,
+        addTransition, addTransitionEndpoint, removeTransitionEndpoint, deleteTransition,
+        addEntity, duplicateEntity, deleteEntity,
         createPatrol, clearPatrol, startPatrol, stopPatrol,
+        setPatrolSpeed, setPatrolLoop, removePatrolPoint, movePatrolPoint, reversePatrol,
+        createCoverage, clearCoverage, resetCoverage, setCoverageSweep,
         createVision, clearVision, setSweep
     };
 })();

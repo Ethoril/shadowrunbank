@@ -3,25 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <title>Smoke test</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body>
     <header>
         <h1>smoke</h1>
-        <div class="header-right"><span id="save-status"></span><div id="status-ticker"></div></div>
+        <div class="header-right">
+            <span id="save-status"></span><div id="status-ticker"></div>
+            <button id="undo-btn" disabled>Annuler</button>
+            <button id="redo-btn" disabled>Rétablir</button>
+        </div>
     </header>
+    <div id="conflict-panel" hidden>
+        <button id="conflict-use-remote">Version distante</button>
+        <button id="conflict-export-local">Exporter</button>
+        <button id="conflict-force-local">Forcer</button>
+    </div>
+    <button id="retry-cloud-btn" hidden>Reconnecter</button>
+    <button id="vis-reveal-all">Tout révéler</button>
+    <button id="vis-hide-all">Tout cacher</button>
+    <button id="vis-reset-floor">Découvertes étage</button>
+    <button id="vis-reset-all">Toutes découvertes</button>
+    <div id="visibility-tree"></div>
     <div class="app-container">
         <div class="panel">
             <div id="tools-structure"></div>
             <div id="tools-entities"></div>
+            <div id="tools-decors"></div>
         </div>
         <div class="center-zone">
             <div class="tabs" id="floor-tabs"></div>
             <div class="map-wrapper" id="map-wrapper" style="width:720px;height:480px;flex:none;">
                 <div id="board">
                     <div id="rooms-layer"></div>
+                    <div id="decors-floor-layer"></div>
+                    <div id="decors-layer"></div>
                     <svg id="overlay-svg"></svg>
                     <div id="entities-layer"></div>
+                    <div id="transitions-layer"></div>
+                    <div id="tokens-layer"></div>
                 </div>
             </div>
         </div>
@@ -29,20 +49,113 @@
     </div>
     <pre id="test-results"></pre>
 
-    <script src="js/store.js"></script>
-    <script src="js/anim.js"></script>
-    <script src="js/map.js"></script>
-    <script src="js/inspector.js"></script>
-    <script src="js/editor.js"></script>
-    <script src="js/visibility.js"></script>
-    <script src="js/main.js"></script>
+    <script src="js/catalog.js?v=11"></script>
+    <script src="js/store.js?v=11"></script>
+    <script src="js/anim.js?v=11"></script>
+    <script src="js/map.js?v=11"></script>
+    <script src="js/exploration.js?v=11"></script>
+    <script src="js/inspector.js?v=11"></script>
+    <script src="js/editor.js?v=11"></script>
+    <script src="js/visibility.js?v=11"></script>
+    <script src="js/main.js?v=11"></script>
     <script>
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
         const out = [];
         const check = (name, cond) => out.push((cond ? 'PASS' : 'FAIL') + ' :: ' + name);
         try {
-            localStorage.clear();
+            // ===== Phase 0 / schéma v2 : fixture de production et migration =====
+            const fixtureResponse = await fetch('tests/fixtures/plan-v1-production.json');
+            const v1Fixture = await fixtureResponse.json();
+            const sourceIds = {
+                floors: v1Fixture.floors.map(item => item.id),
+                rooms: v1Fixture.rooms.map(item => item.id),
+                entities: v1Fixture.entities.map(item => item.id)
+            };
+            const sourceCellCount = v1Fixture.rooms.reduce((sum, room) => sum + room.cells.length, 0);
+            const preparedFixture = Store.preparePlan(v1Fixture);
+            const migratedFixture = preparedFixture.plan;
+            check('fixture : plan de production v1 détecté', preparedFixture.migratedFrom === 1);
+            check('migration : schéma v2 et révision initiale',
+                migratedFixture.schemaVersion === 2 && migratedFixture.revision === 0);
+            check('migration : identifiants intégralement préservés',
+                JSON.stringify(sourceIds.floors) === JSON.stringify(migratedFixture.floors.map(item => item.id))
+                && JSON.stringify(sourceIds.rooms) === JSON.stringify(migratedFixture.rooms.map(item => item.id))
+                && JSON.stringify(sourceIds.entities) === JSON.stringify(migratedFixture.entities.map(item => item.id)));
+            check('migration : géométrie des pièces préservée',
+                migratedFixture.rooms.reduce((sum, room) => sum + room.cells.length, 0) === sourceCellCount);
+            check('migration : note privée séparée des informations joueurs',
+                migratedFixture.entities.every(ent => !('note' in ent)
+                    && typeof ent.privateNote === 'string' && ent.playerInfo === ''));
+            const migratedCamera = migratedFixture.entities.find(ent => ent.vision);
+            check('migration : ancien cône converti en couverture sans supprimer la source',
+                migratedCamera.coverage.shape === 'cone'
+                && migratedCamera.coverage.channel === 'optical'
+                && migratedCamera.coverage.range === migratedCamera.vision.range);
+            check('validation : fixture migrée valide', Store.validatePlan(migratedFixture).length === 0);
+            check('validation : plan irrécupérable rejeté', (() => {
+                try { Store.preparePlan({ schemaVersion: 2, name: 'cassé' }); return false; }
+                catch (error) { return error.message.includes('Plan invalide'); }
+            })());
+            check('validation : valeur imbriquée invalide rejetée proprement', (() => {
+                const malformed = JSON.parse(JSON.stringify(migratedFixture));
+                malformed.rooms[0] = null;
+                try { return Store.validatePlan(malformed).length > 0; }
+                catch (error) { return false; }
+            })());
+            const unnormalized = JSON.parse(JSON.stringify(migratedFixture));
+            const unnormalizedCamera = unnormalized.entities.find(ent => ent.coverage);
+            unnormalizedCamera.x = -20;
+            unnormalizedCamera.y = 200;
+            unnormalizedCamera.coverage.angle = 999;
+            unnormalizedCamera.coverage.range = -5;
+            const unnormalizedPatrol = unnormalized.entities[0];
+            unnormalizedPatrol.patrol = {
+                points: [{ x: -5, y: 99 }, { x: 4, y: 4 }],
+                loop: true, moving: false, speed: 99, anchorAt: 0, revealed: false
+            };
+            const normalized = Store.preparePlan(unnormalized).plan;
+            const normalizedCamera = normalized.entities.find(ent => ent.id === unnormalizedCamera.id);
+            const normalizedPatrol = normalized.entities.find(ent => ent.id === unnormalizedPatrol.id).patrol;
+            check('normalisation : coordonnées, portée, angle et vitesse bornés',
+                normalizedCamera.x === 0.5 && normalizedCamera.y === 15.5
+                && normalizedCamera.coverage.angle === 180 && normalizedCamera.coverage.range === 0.5
+                && normalizedPatrol.speed === 10
+                && normalizedPatrol.points[0].x === 0 && normalizedPatrol.points[0].y === 16);
+            check('catalogue : catégories et capacités déclaratives disponibles',
+                EntityCatalog.categories.length === 7
+                && EntityCatalog.entries().length >= 19
+                && EntityCatalog.get('armed_guard').canPatrol
+                && EntityCatalog.get('camera').coverageChannel === 'optical'
+                && EntityCatalog.get('mana_barrier').blocksVision.includes('astral'));
+
+            const legacyTypesPlan = Store.createDefaultPlan();
+            legacyTypesPlan.schemaVersion = 1;
+            delete legacyTypesPlan.revision;
+            const legacyFloorId = legacyTypesPlan.floors[0].id;
+            legacyTypesPlan.entities = [
+                { id: 'legacy_turret', floorId: legacyFloorId, type: 'turret', name: 'T', state: 'active', networkId: '', x: 1, y: 1, revealed: false, note: '', patrol: null, vision: null },
+                { id: 'legacy_barrier', floorId: legacyFloorId, type: 'barrier', name: 'B', state: 'active', networkId: '', x: 2, y: 2, revealed: false, note: '', patrol: null, vision: null },
+                { id: 'legacy_guard', floorId: legacyFloorId, type: 'guard', name: 'G', state: 'active', networkId: '', x: 3, y: 3, revealed: false, note: 'secret', patrol: null, vision: null }
+            ];
+            const migratedLegacyTypes = Store.preparePlan(legacyTypesPlan).plan.entities;
+            check('migration : anciens types adaptés sans changer les identifiants',
+                migratedLegacyTypes.map(ent => ent.id).join(',') === 'legacy_turret,legacy_barrier,legacy_guard'
+                && migratedLegacyTypes.map(ent => ent.type).join(',') === 'automatic_turret,mana_barrier,armed_guard'
+                && migratedLegacyTypes[2].privateNote === 'secret');
+
+            const initialPlan = Store.createDefaultPlan();
+            localStorage.setItem('shadowrunbank_plan_v1', JSON.stringify(v1Fixture));
             Store.load();
+            check('chargement : fixture v1 migrée automatiquement',
+                Store.getPlan().schemaVersion === 2
+                && Store.getPlan().entities.length === v1Fixture.entities.length);
+            check('chargement : sauvegarde v1 créée avant migration',
+                Object.keys(localStorage).some(key => key.startsWith('shadowrunbank_plan_backup_')));
+
+            localStorage.clear();
+            localStorage.setItem('shadowrunbank_plan_v1', JSON.stringify(initialPlan));
+            Store.load();
+            localStorage.clear();
             App.renderAll();
 
             const board = document.getElementById('board');
@@ -56,6 +169,9 @@
             const plan = Store.getPlan();
             const floor0 = Store.currentFloor();
             const nRooms = plan.rooms.length;
+            check('nouveau plan : schéma v2 initialisé',
+                plan.schemaVersion === 2 && plan.revision === 0
+                && Array.isArray(plan.decors) && Array.isArray(plan.transitions));
 
             // 1. Peinture : nouvelle pièce sur une case libre (0,15 est hors des pièces par défaut)
             Store.ui.selection = null;
@@ -111,6 +227,11 @@
             window.dispatchEvent(evt('pointermove', 14, 8));
             window.dispatchEvent(new PointerEvent('pointerup'));
             check('drag déplace la caméra', Math.abs(cam.x - 14) < 0.5 && Math.abs(cam.y - 8) < 0.5);
+            const movedCamDiv = document.querySelector(`.entity[data-id="${cam.id}"]`);
+            movedCamDiv.dispatchEvent(evt('pointerdown', 14, 8));
+            window.dispatchEvent(evt('pointermove', 40, 30));
+            window.dispatchEvent(new PointerEvent('pointerup'));
+            check('drag reste entièrement dans la grille', cam.x === 23.5 && cam.y === 15.5);
 
             // 7. Suppression du nœud → enfants déconnectés
             Store.deleteEntity(node.id);
@@ -130,6 +251,7 @@
             Store.saveNow();
             const saved = JSON.parse(localStorage.getItem('shadowrunbank_plan_v1'));
             check('plan persisté', saved && saved.entities.length === plan.entities.length && saved.rooms.length === plan.rooms.length);
+            check('schéma v2 persisté', saved.schemaVersion === 2 && saved.revision === 0);
 
             // ===== Phase 2b : chemins de ronde =====
 
@@ -154,10 +276,17 @@
             check('balayage : statique sans sweep', Anim.sweepDirection({ direction: 33, sweep: null }, 5000) === 33);
 
             // 13. Flux UI : garde + tracé de waypoints + démarrage/arrêt
-            Editor.setTool('guard');
+            Editor.setTool('armed_guard');
             board.dispatchEvent(evt('pointerdown', 8, 12));
             const guard = plan.entities[plan.entities.length - 1];
-            check('garde placé (type mobile)', guard && guard.type === 'guard' && MapView.catalog.guard.mobile === true);
+            check('garde placé (capacité de ronde)',
+                guard && guard.type === 'armed_guard' && EntityCatalog.get(guard.type).canPatrol === true);
+            Store.ui.selection = { kind: 'entity', id: guard.id };
+            Inspector.render();
+            check('profil personnel : états adaptés dans l’inspecteur',
+                [...document.querySelectorAll('#inspector-body select option')]
+                    .some(option => option.textContent === 'Vigilant'));
+            Store.clearCoverage(guard); // garde les anciens tests de ronde isolés du rendu de couverture
 
             Store.createPatrol(guard);
             check('ronde créée : 1er waypoint = position du garde', guard.patrol.points.length === 1
@@ -190,7 +319,43 @@
             Store.clearPatrol(guard);
             check('effacement de la ronde', guard.patrol === null);
 
-            // ===== Phase 2c : cônes de vision =====
+            // 13b. Corrections de continuité des rondes
+            Store.createPatrol(guard);
+            guard.patrol.points.push({ x: guard.x + 8, y: guard.y });
+            Store.startPatrol(guard);
+            const speedChangeAt = guard.patrol.anchorAt + 1500;
+            const beforeSpeedChange = Anim.effectivePos(guard, speedChangeAt);
+            Store.setPatrolSpeed(guard, 2, speedChangeAt);
+            const afterSpeedChange = Anim.effectivePos(guard, speedChangeAt);
+            check('changement de vitesse sans téléportation',
+                Math.hypot(beforeSpeedChange.x - afterSpeedChange.x,
+                           beforeSpeedChange.y - afterSpeedChange.y) < 0.01);
+
+            guard.patrol.anchorAt = Date.now() - 1000;
+            const beforeLoopChange = Anim.effectivePos(guard, Date.now());
+            Store.setPatrolLoop(guard, false);
+            check('passage boucle/aller-retour conserve la position et fige la ronde',
+                guard.patrol.moving === false
+                && Math.hypot(beforeLoopChange.x - guard.x, beforeLoopChange.y - guard.y) < 0.1);
+
+            Store.startPatrol(guard);
+            Store.setEntityState(guard, 'offline');
+            check('entité hors ligne : ronde arrêtée et position figée',
+                guard.patrol.moving === false
+                && Math.hypot(Anim.effectivePos(guard, Date.now()).x - guard.x,
+                              Anim.effectivePos(guard, Date.now()).y - guard.y) < 0.01);
+            check('entité hors ligne : redémarrage de ronde refusé', Store.startPatrol(guard) === false);
+            Store.setEntityState(guard, 'active');
+
+            const patrolNode = Store.addEntity('network_node', floor0.id, 7, 12, 'NET');
+            guard.networkId = patrolNode.id;
+            Store.startPatrol(guard);
+            Store.setEntityState(patrolNode, 'offline');
+            check('nœud hors ligne : ronde des appareils liés arrêtée', guard.patrol.moving === false);
+            Store.deleteEntity(patrolNode.id);
+            Store.clearPatrol(guard);
+
+            // ===== Phase 3 : moteur générique de couverture =====
 
             // 14. Murs extraits des contours (Hall Public : cols 6-17, rows 1-9)
             MapView.render();
@@ -211,27 +376,170 @@
             const maxXFree = Math.max(...coneFree.map(pt => pt[0]));
             check('sans mur : portée pleine', maxXFree > 29.9);
 
-            // 16. Flux UI : cône sur la caméra existante + états
-            Store.createVision(cam);
+            // 16. Flux UI : couverture sur la caméra existante + états
+            Store.createCoverage(cam);
             cam.state = 'active';
-            MapView.renderCones(Date.now());
-            check('polygone de cône rendu', document.querySelectorAll('#g-cones polygon').length === 1);
+            MapView.renderCoverages(Date.now());
+            check('polygone de cône rendu', document.querySelectorAll('#g-coverages [data-shape="cone"]').length === 1);
             cam.state = 'offline';
-            MapView.renderCones(Date.now());
-            check('caméra offline → pas de cône', document.querySelectorAll('#g-cones polygon').length === 0);
+            MapView.renderCoverages(Date.now());
+            check('caméra offline → pas de couverture', document.querySelectorAll('#g-coverages [data-shape]').length === 0);
             cam.state = 'active';
 
-            Store.setSweep(cam, true);
-            check('balayage activé (bornes ±45°)', cam.vision.sweep && cam.vision.sweep.to - cam.vision.sweep.from === 90);
-            const d1 = Anim.sweepDirection(cam.vision, cam.vision.sweep.anchorAt + 1000);
-            const d2 = Anim.sweepDirection(cam.vision, cam.vision.sweep.anchorAt + 3000);
-            check('le cône balaie (angle varie)', Math.abs(d1 - d2) > 1);
-            Store.setSweep(cam, false);
-            check('balayage désactivé → direction figée', cam.vision.sweep === null && typeof cam.vision.direction === 'number');
-            Store.clearVision(cam);
-            check('suppression du cône', cam.vision === null);
+            Store.setCoverageSweep(cam, true);
+            check('balayage activé (bornes ±45°)', cam.coverage.sweep && cam.coverage.sweep.to - cam.coverage.sweep.from === 90);
+            const d1 = Anim.sweepDirection(cam.coverage, cam.coverage.sweep.anchorAt + 1000);
+            const d2 = Anim.sweepDirection(cam.coverage, cam.coverage.sweep.anchorAt + 3000);
+            check('la couverture balaie (angle varie)', Math.abs(d1 - d2) > 1);
+            Store.setCoverageSweep(cam, false);
+            check('balayage désactivé → direction figée', cam.coverage.sweep === null && typeof cam.coverage.direction === 'number');
 
-            // ===== Phase 4 : révélation / vue joueur =====
+            const shapes = ['cone', 'beam', 'rectangle', 'circle', 'threshold'];
+            const channels = ['optical', 'laser', 'pressure', 'astral', 'magnetic'];
+            shapes.forEach((shape, index) => {
+                cam.coverage.shape = shape;
+                cam.coverage.channel = channels[index];
+                MapView.renderCoverages(Date.now());
+                check('rendu couverture : ' + shape,
+                    document.querySelectorAll('#g-coverages [data-shape="' + shape + '"][data-channel="' + channels[index] + '"]').length === 1);
+            });
+
+            const beamEast = MapView.beamPolygon(10, 5, 0, 20, 0.5, walls);
+            check('faisceau bloqué par le mur est (x=18)',
+                Math.max(...beamEast.map(point => point[0])) <= 18.01);
+            check('rectangle orienté avec portée et largeur', (() => {
+                const rectangle = MapView.rectanglePolygon(2, 3, 0, 6, 2);
+                return Math.max(...rectangle.map(point => point[0])) === 8
+                    && Math.min(...rectangle.map(point => point[1])) === 2;
+            })());
+            check('seuil centré sur son dispositif', (() => {
+                const threshold = MapView.thresholdPolygon(5, 5, 0, 2, 4);
+                return Math.min(...threshold.map(point => point[0])) === 4
+                    && Math.max(...threshold.map(point => point[0])) === 6;
+            })());
+
+            cam.coverage.shape = 'cone';
+            cam.coverage.channel = 'optical';
+            Store.ui.selection = { kind: 'entity', id: cam.id };
+            Inspector.render();
+            check('inspecteur : forme et canal éditables',
+                [...document.querySelectorAll('#inspector-body select option')].some(option => option.value === 'threshold')
+                && [...document.querySelectorAll('#inspector-body select option')].some(option => option.value === 'astral'));
+            Store.clearCoverage(cam);
+            check('suppression de la couverture', cam.coverage === null);
+
+            // ===== Phase 4 : décors et occlusion =====
+            check('catalogue décors : catégories et types disponibles',
+                DecorCatalog.categories.length === 3 && DecorCatalog.entries().length >= 20
+                && DecorCatalog.get('counter').blocksVision.includes('optical')
+                && DecorCatalog.get('rug').layer === 'floor');
+            const rawDecorPlan = Store.createDefaultPlan();
+            rawDecorPlan.decors.push({
+                id: 'legacy_decor', floorId: rawDecorPlan.floors[0].id, type: 'cabinet',
+                name: 'Ancienne armoire', x: -5, y: 99, width: 99, height: -2,
+                rotation: 46, revealed: true, note: 'secret'
+            });
+            const normalizedDecor = Store.preparePlan(rawDecorPlan).plan.decors[0];
+            check('migration décor : géométrie, propriétés et notes normalisées',
+                normalizedDecor.x === 0 && normalizedDecor.y === 16
+                && normalizedDecor.width === 24 && normalizedDecor.height === 0.25
+                && normalizedDecor.rotation === 90
+                && normalizedDecor.blocksVision.includes('optical')
+                && normalizedDecor.privateNote === 'secret' && normalizedDecor.playerInfo === '');
+
+            Editor.setTool('decor:counter');
+            board.dispatchEvent(evt('pointerdown', 14, 5));
+            const counter = plan.decors[plan.decors.length - 1];
+            check('placement décor : modèle complet et retour sélection',
+                counter.type === 'counter' && counter.width === 3 && counter.height === 1
+                && counter.blocksMovement && counter.blocksVision.includes('laser')
+                && Store.ui.activeTool === 'select');
+            check('décor obstacle rendu', document.querySelector(`.decor[data-id="${counter.id}"]`) !== null);
+            MapView.invalidateOccluders();
+            const opticalCountBeforeRug = MapView.computeOccluders(floor0.id, 'optical').length;
+            const rug = Store.addDecor('rug', floor0.id, 8, 8);
+            MapView.render();
+            check('décor au sol rendu sous les obstacles',
+                document.querySelector(`#decors-floor-layer .decor[data-id="${rug.id}"]`) !== null);
+            check('décor non occultant sans effet sur l’optique',
+                MapView.computeOccluders(floor0.id, 'optical').length === opticalCountBeforeRug);
+            Store.deleteDecor(rug.id);
+
+            const decorRect = board.getBoundingClientRect();
+            const decorEvt = (type, col, row) => new PointerEvent(type, {
+                bubbles: true,
+                clientX: decorRect.left + col * (decorRect.width / 24) + 2,
+                clientY: decorRect.top + row * (decorRect.height / 16) + 2
+            });
+            const counterDiv = document.querySelector(`.decor[data-id="${counter.id}"]`);
+            counterDiv.dispatchEvent(decorEvt('pointerdown', 14, 5));
+            window.dispatchEvent(decorEvt('pointermove', 15, 6));
+            window.dispatchEvent(new PointerEvent('pointerup'));
+            check('drag déplace le décor', Math.abs(counter.x - 15) < 0.2 && Math.abs(counter.y - 6) < 0.2);
+            counter.x = 14; counter.y = 5; counter.rotation = 0;
+            MapView.render();
+
+            MapView.invalidateOccluders();
+            const buildsBefore = MapView.getOccluderCacheStats().builds;
+            const opticalOccluders = MapView.computeOccluders(floor0.id, 'optical');
+            const buildsAfterFirst = MapView.getOccluderCacheStats().builds;
+            MapView.computeOccluders(floor0.id, 'optical');
+            const buildsAfterSecond = MapView.getOccluderCacheStats().builds;
+            check('cache occultants : segments réutilisés sans reconstruction',
+                buildsAfterFirst === buildsBefore + 1 && buildsAfterSecond === buildsAfterFirst);
+            const decorBeam = MapView.beamPolygon(10, 5, 0, 20, 0.25, opticalOccluders);
+            check('comptoir coupe immédiatement un faisceau optique',
+                Math.max(...decorBeam.map(point => point[0])) <= 12.51);
+            const decorCone = MapView.conePolygon(10, 5, 0, 2, 20, opticalOccluders);
+            check('cône optique bloqué par un décor',
+                Math.max(...decorCone.map(point => point[0])) <= 12.51);
+            const infraredBeam = MapView.beamPolygon(10, 5, 0, 20, 0.25,
+                MapView.computeOccluders(floor0.id, 'infrared'));
+            check('infrarouge bloqué par une cloison',
+                Math.max(...infraredBeam.map(point => point[0])) <= 12.51);
+            const laserBeam = MapView.beamPolygon(10, 5, 0, 20, 0.25,
+                MapView.computeOccluders(floor0.id, 'laser'));
+            check('laser arrêté au premier obstacle',
+                Math.max(...laserBeam.map(point => point[0])) <= 12.51);
+            check('occlusion par canal : pression non bloquée',
+                MapView.computeOccluders(floor0.id, 'pressure').length === 0);
+            const grate = Store.addEntity('steel_grate', floor0.id, 11, 5, 'GRL');
+            MapView.invalidateOccluders();
+            check('grille d’acier transparente optiquement',
+                MapView.computeOccluders(floor0.id, 'optical').length === opticalOccluders.length);
+            Store.deleteEntity(grate.id);
+            const manaBarrier = Store.addEntity('mana_barrier', floor0.id, 11, 5, 'BAR');
+            MapView.invalidateOccluders();
+            check('occlusion par canal : barrière de mana limitée à l’astral',
+                MapView.computeOccluders(floor0.id, 'astral').length === 4
+                && MapView.computeOccluders(floor0.id, 'magnetic').length === 0);
+            Store.setEntityState(manaBarrier, 'offline');
+            check('barrière dissipée : occlusion astrale supprimée',
+                MapView.computeOccluders(floor0.id, 'astral').length === 0);
+            Store.deleteEntity(manaBarrier.id);
+
+            counter.width = 4;
+            counter.height = 1.5;
+            counter.rotation = 90;
+            Store.ui.selection = { kind: 'decor', id: counter.id };
+            MapView.render();
+            Inspector.render();
+            check('rotation et redimensionnement rendus', (() => {
+                const rendered = document.querySelector(`.decor[data-id="${counter.id}"]`);
+                const cellSize = board.getBoundingClientRect().width / 24;
+                return Math.abs(parseFloat(rendered.style.width) - 4 * cellSize) < 0.1
+                    && rendered.style.getPropertyValue('--decor-rotation') === '90deg';
+            })());
+            check('inspecteur décor : dimensions, rotation et canaux éditables',
+                document.getElementById('inspector-body').textContent.includes('Canaux bloqués')
+                && [...document.querySelectorAll('#inspector-body select option')].some(option => option.value === '270'));
+
+            Visibility.render();
+            check('arbre Visibilité : branche décors présente',
+                [...document.querySelectorAll('#visibility-tree .vis-label')]
+                    .some(label => label.textContent.startsWith('Décors (')));
+
+            // ===== Révélation / vue joueur =====
 
             // 17. Filtre des entités en prévisualisation
             cam.revealed = false;
@@ -242,6 +550,15 @@
             check('entité cachée non rendue', document.querySelector(`.entity[data-id="${cam.id}"]`) === null);
             check('entité révélée rendue', document.querySelector(`.entity[data-id="${guard.id}"]`) !== null);
             check('entité rendue sans marqueur caché', !document.querySelector(`.entity[data-id="${guard.id}"]`).classList.contains('unrevealed'));
+            check('décor caché non rendu en vue joueur',
+                document.querySelector(`.decor[data-id="${counter.id}"]`) === null);
+            check('décor caché continue d’occulter',
+                MapView.computeOccluders(floor0.id, 'optical')
+                    .some(segment => segment.x1 > 11 && segment.x1 < 17));
+            counter.revealed = true;
+            MapView.render();
+            check('décor révélé rendu en vue joueur',
+                document.querySelector(`.decor[data-id="${counter.id}"]`) !== null);
 
             // 18. Filtre des pièces
             const labels = () => [...document.querySelectorAll('.room-label')].map(l => l.textContent);
@@ -262,14 +579,14 @@
             MapView.renderEntities();
             check('câble visible si les deux révélés', document.querySelectorAll('#g-cables line').length === 1);
 
-            // 20. Cône : flag vision.revealed indépendant de l'entité
-            Store.createVision(cam);
+            // 20. Couverture : révélation indépendante de l'entité
+            Store.createCoverage(cam);
             cam.state = 'active';
             MapView.render();
-            check('cône caché tant que vision.revealed=false', document.querySelectorAll('#g-cones polygon').length === 0);
-            cam.vision.revealed = true;
-            MapView.renderCones(Date.now());
-            check('cône visible une fois révélé', document.querySelectorAll('#g-cones polygon').length === 1);
+            check('couverture cachée tant que coverage.revealed=false', document.querySelectorAll('#g-coverages [data-shape]').length === 0);
+            cam.coverage.revealed = true;
+            MapView.renderCoverages(Date.now());
+            check('couverture visible une fois révélée', document.querySelectorAll('#g-coverages [data-shape="cone"]').length === 1);
 
             // 21. Ronde : flag patrol.revealed indépendant de l'entité
             Store.createPatrol(guard);
@@ -294,9 +611,14 @@
             App.renderAll();
             check('sélection d\'élément caché purgée', Store.ui.selection === null);
             Store.ui.selection = { kind: 'entity', id: guard.id };
+            guard.privateNote = 'Secret réservé au MJ';
+            guard.playerInfo = 'Information révélée aux runners';
             Inspector.render();
             check('inspecteur joueur : aucun contrôle d\'édition',
                 document.querySelectorAll('#inspector-body input, #inspector-body select, #inspector-body textarea, #inspector-body button').length === 0);
+            check('inspecteur joueur : info publique sans note MJ',
+                document.getElementById('inspector-body').textContent.includes('Information révélée aux runners')
+                && !document.getElementById('inspector-body').textContent.includes('Secret réservé au MJ'));
             check('inspecteur joueur : ronde révélée mentionnée',
                 document.getElementById('inspector-body').textContent.includes('waypoint'));
 
@@ -318,6 +640,496 @@
             Store.ui.selection = { kind: 'floor', id: floor0.id };
             Inspector.render();
             check('toggle présent sur un étage', document.querySelector('#inspector-body .btn-reveal') !== null);
+
+            // 26. Navigation depuis l'arbre Visibilité + confirmation globale
+            Visibility.render();
+            const targetRoom = plan.rooms.find(room => room.floorId !== floor0.id);
+            const targetLabel = [...document.querySelectorAll('#visibility-tree .vis-label')]
+                .find(label => label.textContent === targetRoom.name);
+            targetLabel.click();
+            check('arbre Visibilité : sélection change automatiquement d\'étage',
+                Store.ui.currentFloorId === targetRoom.floorId
+                && Store.ui.selection.kind === 'room'
+                && Store.ui.selection.id === targetRoom.id);
+
+            const originalConfirm = window.confirm;
+            let revealConfirmCount = 0;
+            window.confirm = () => { revealConfirmCount++; return false; };
+            document.getElementById('vis-reveal-all').click();
+            check('Tout révéler : annulation conserve les éléments cachés',
+                revealConfirmCount === 1 && plan.floors.some(floor => !floor.revealed));
+            window.confirm = () => true;
+            document.getElementById('vis-reveal-all').click();
+            check('Tout révéler : confirmation requise puis appliquée',
+                plan.floors.every(floor => floor.revealed)
+                && plan.rooms.every(room => room.revealed)
+                && plan.entities.every(entity => entity.revealed)
+                && plan.decors.every(decor => decor.revealed));
+            window.confirm = originalConfirm;
+
+            Store.ui.currentFloorId = floor0.id;
+            Store.ui.selection = { kind: 'decor', id: counter.id };
+            Inspector.deleteSelectedDecor();
+            check('suppression décor : modèle, rendu et occultants mis à jour',
+                Store.findDecor(counter.id) === undefined
+                && document.querySelector(`.decor[data-id="${counter.id}"]`) === null
+                && !MapView.computeOccluders(floor0.id, 'optical')
+                    .some(segment => segment.x1 > 12 && segment.x1 < 16 && segment.y1 > 3 && segment.y1 < 7));
+
+            // ===== Phase 5 : catalogue de sécurité complet =====
+            check('catalogue cible : les 16 dispositifs sont déclarés',
+                EntityCatalog.securityTypes.length === 16
+                && EntityCatalog.securityTypes.every(type => EntityCatalog.types[type]));
+            check('catalogue cible : capacités spécialisées cohérentes',
+                EntityCatalog.get('retina_scanner').biometric
+                && EntityCatalog.get('combat_drone').armed
+                && EntityCatalog.get('steel_grate').stateProfile === 'structural'
+                && EntityCatalog.get('security_mage').magical
+                && EntityCatalog.get('detection_laser').defaultCoverage.width === 0.25);
+            const paletteLabels = [...document.querySelectorAll('#tools-entities .tool-btn')]
+                .map(button => button.textContent);
+            check('palette : les 16 dispositifs sont accessibles',
+                EntityCatalog.securityTypes.every(type =>
+                    paletteLabels.some(label => label.includes(EntityCatalog.get(type).name))));
+
+            const catalogNode = Store.addEntity('network_node', floor0.id, 1.5, 1.5, 'NET');
+            const catalogEntities = [];
+            EntityCatalog.securityTypes.forEach((type, index) => {
+                const boardRect = board.getBoundingClientRect();
+                const col = 2 + (index % 8) * 2;
+                const row = 2 + Math.floor(index / 8) * 3;
+                Editor.setTool(type);
+                board.dispatchEvent(new PointerEvent('pointerdown', {
+                    bubbles: true,
+                    clientX: boardRect.left + col * (boardRect.width / 24) + 2,
+                    clientY: boardRect.top + row * (boardRect.height / 16) + 2
+                }));
+                const ent = plan.entities[plan.entities.length - 1];
+                const definition = EntityCatalog.get(type);
+                const stateOptions = EntityCatalog.statesFor(type);
+                let patrolConfigured = true;
+                if (definition.canPatrol) {
+                    patrolConfigured = Store.createPatrol(ent).points.length === 1;
+                    Store.clearPatrol(ent);
+                }
+                const coverageConfigured = definition.coverageType === 'none'
+                    ? ent.coverage === null
+                    : ent.coverage
+                        && ent.coverage.shape === definition.coverageType
+                        && ent.coverage.channel === definition.coverageChannel
+                        && Object.entries(definition.defaultCoverage || {})
+                            .every(([key, value]) => ent.coverage[key] === value);
+                if (definition.networkable) ent.networkId = catalogNode.id;
+                Store.setEntityState(ent, 'hacked');
+                const stateConfigured = ent.state === 'hacked' && stateOptions.length === 3;
+                Store.setEntityState(ent, 'active');
+                ent.revealed = true;
+                if (ent.coverage) ent.coverage.revealed = false;
+                Store.ui.selection = { kind: 'entity', id: ent.id };
+                Inspector.render();
+                const inspectorConfigured = document.getElementById('inspector-body').textContent
+                    .includes(definition.name.toUpperCase());
+                check('cycle catalogue : ' + type,
+                    ent.type === type
+                    && Store.ui.activeTool === 'select'
+                    && Store.ui.selection.id === ent.id
+                    && (!definition.networkable || ent.networkId === catalogNode.id)
+                    && patrolConfigured && coverageConfigured && stateConfigured && inspectorConfigured);
+                catalogEntities.push(ent);
+            });
+            Store.touch();
+
+            const catalogRoundTrip = Store.preparePlan(JSON.parse(Store.exportJson())).plan;
+            check('catalogue : sauvegarde et rechargement sans perte',
+                catalogEntities.every(ent => {
+                    const restored = catalogRoundTrip.entities.find(item => item.id === ent.id);
+                    return restored && restored.type === ent.type
+                        && restored.networkId === ent.networkId
+                        && JSON.stringify(restored.coverage) === JSON.stringify(ent.coverage);
+                }));
+
+            Store.ui.preview = true;
+            MapView.render();
+            const catalogIds = new Set(catalogEntities.map(ent => ent.id));
+            check('catalogue : les 16 dispositifs révélés sont visibles aux joueurs',
+                [...document.querySelectorAll('.entity[data-id]')]
+                    .filter(element => catalogIds.has(element.dataset.id)).length === 16);
+            check('catalogue : couvertures encore indépendamment cachées',
+                [...document.querySelectorAll('#g-coverages [data-entity-id]')]
+                    .filter(element => catalogIds.has(element.dataset.entityId)).length === 0);
+            catalogEntities.forEach(ent => { if (ent.coverage) ent.coverage.revealed = true; });
+            MapView.renderCoverages(Date.now());
+            const expectedCatalogCoverages = catalogEntities.filter(ent => ent.coverage).length;
+            check('catalogue : couvertures révélables par dispositif',
+                [...document.querySelectorAll('#g-coverages [data-entity-id]')]
+                    .filter(element => catalogIds.has(element.dataset.entityId)).length
+                    === expectedCatalogCoverages);
+            Store.ui.preview = false;
+            catalogEntities.forEach(ent => Store.deleteEntity(ent.id));
+            Store.deleteEntity(catalogNode.id);
+            Store.ui.selection = null;
+            MapView.render();
+
+            // ===== Phase 6 : pions PJ, transitions et exploration =====
+            const phase6PlanTimestamp = plan.updatedAt;
+            const phase6PlanRevision = plan.revision;
+            Editor.setTool('token');
+            const tokenRect = board.getBoundingClientRect();
+            board.dispatchEvent(new PointerEvent('pointerdown', {
+                bubbles: true,
+                clientX: tokenRect.left + 1.5 * (tokenRect.width / 24),
+                clientY: tokenRect.top + 3.5 * (tokenRect.height / 16)
+            }));
+            const runner = Store.getTokens()[Store.getTokens().length - 1];
+            check('pion : création depuis la palette sans modifier le plan',
+                runner && Store.ui.selection.kind === 'token'
+                && plan.updatedAt === phase6PlanTimestamp && plan.revision === phase6PlanRevision);
+            MapView.renderTokens();
+            const runnerElement = document.querySelector('.runner-token[data-id="' + runner.id + '"]');
+            check('pion : cible tactile de 44 px et rendu sélectionné',
+                runnerElement && runnerElement.getBoundingClientRect().width >= 44
+                && runnerElement.classList.contains('selected'));
+
+            runner.name = 'Kestrel';
+            runner.shortLabel = 'KES';
+            runner.color = '#ff2a8b';
+            runner.icon = 'decker';
+            runner.playerMovable = true;
+            runner.locked = true;
+            Store.saveToken(runner);
+            Store.ui.selection = { kind: 'token', id: runner.id };
+            Inspector.render();
+            check('pion : configuration complète dans l’inspecteur',
+                document.querySelector('#inspector-body input[type="text"]').value === 'Kestrel'
+                && document.querySelector('#inspector-body input[type="color"]').value === '#ff2a8b'
+                && document.querySelector('#inspector-body option[value="decker"]'));
+            const lockedStart = { x: runner.x, y: runner.y };
+            Store.ui.readOnly = true;
+            MapView.renderTokens();
+            const lockedElement = document.querySelector('.runner-token[data-id="' + runner.id + '"]');
+            lockedElement.dispatchEvent(new PointerEvent('pointerdown', {
+                bubbles: true, pointerId: 22, clientX: 10, clientY: 10
+            }));
+            window.dispatchEvent(new PointerEvent('pointermove', {
+                bubbles: true, pointerId: 22, clientX: 500, clientY: 400
+            }));
+            window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 22 }));
+            check('pion : déplacement joueur refusé quand verrouillé',
+                runner.x === lockedStart.x && runner.y === lockedStart.y);
+            Store.ui.readOnly = false;
+            const copyRunner = Store.duplicateToken(runner);
+            check('pion : duplication et persistance séparée',
+                copyRunner.id !== runner.id && copyRunner.color === runner.color
+                && JSON.parse(localStorage.getItem('shadowrunbank_tokens_v1')).length === Store.getTokens().length);
+
+            const phase6Floor = Store.addFloor('Sous-sol exploration');
+            const explorationRoom = Store.addRoom(phase6Floor.id);
+            explorationRoom.name = 'Laboratoire aveugle';
+            for (let row = 1; row <= 6; row++) {
+                for (let col = 1; col <= 8; col++) Store.paintCell(explorationRoom, col, row);
+            }
+            const scout = Store.addToken(phase6Floor.id, 1.5, 3.5, 'Scout');
+            const autoCamera = Store.addEntity('camera', phase6Floor.id, 2.5, 2.5, 'CAM');
+            autoCamera.revealed = false;
+            autoCamera.autoDiscover = true;
+            const hiddenGuard = Store.addEntity('armed_guard', phase6Floor.id, 6.5, 3.5, 'GARDE');
+            hiddenGuard.revealed = false;
+            hiddenGuard.autoDiscover = true;
+            const hiddenLaser = Store.addEntity('detection_laser', phase6Floor.id, 2.5, 4.5, 'LASER');
+            hiddenLaser.revealed = false;
+            hiddenLaser.autoDiscover = false;
+            const blocker = Store.addDecor('counter', phase6Floor.id, 4.5, 3.5);
+            blocker.revealed = false;
+            blocker.autoDiscover = true;
+            Store.resetDiscoveries();
+            const discovered = Exploration.discoverFromToken(scout);
+            check('exploration : étage, pièce et éléments visibles découverts',
+                discovered.some(item => item.kind === 'floor' && item.id === phase6Floor.id)
+                && Store.isDiscovered('room', explorationRoom.id)
+                && Store.isDiscovered('entity', autoCamera.id));
+            check('exploration : autoDiscover false et couverture indépendante',
+                !Store.isDiscovered('entity', hiddenLaser.id)
+                && autoCamera.coverage && autoCamera.coverage.revealed === false);
+            check('exploration : ligne de vue bloquée par un décor opaque',
+                MapView.isLineBlocked(phase6Floor.id, scout, hiddenGuard, 'optical', 0.4)
+                && !Store.isDiscovered('entity', hiddenGuard.id));
+            check('exploration : révélation manuelle et découverte restent indépendantes',
+                !autoCamera.revealed && Store.isEffectivelyRevealed(autoCamera, 'entity'));
+
+            const phase6TargetFloor = Store.sortedFloors().find(floor => floor.id !== phase6Floor.id);
+            const stairs = Store.addTransition('stairs', 'Escalier technique');
+            const sourceEndpoint = Store.addTransitionEndpoint(stairs, phase6Floor.id, 1.5, 3.5);
+            const targetEndpoint = Store.addTransitionEndpoint(stairs, phase6TargetFloor.id, 3.5, 4.5);
+            const planBeforeTokenTravel = plan.updatedAt;
+            stairs.state = 'offline';
+            check('transition : liaison hors ligne inutilisable',
+                Exploration.moveThroughTransition(scout, stairs, sourceEndpoint, targetEndpoint) === false);
+            stairs.state = 'active';
+            check('transition : déplacement multi-étages',
+                Exploration.moveThroughTransition(scout, stairs, sourceEndpoint, targetEndpoint)
+                && scout.floorId === phase6TargetFloor.id && scout.x === 3.5 && scout.y === 4.5
+                && Store.ui.currentFloorId === phase6TargetFloor.id);
+            check('transition : déplacement de pion sans écriture du plan principal',
+                plan.updatedAt === planBeforeTokenTravel);
+            check('transition : passage et étage d’arrivée découverts',
+                Store.isDiscovered('transition', stairs.id)
+                && Store.isDiscovered('floor', phase6TargetFloor.id));
+
+            stairs.bidirectional = false;
+            check('transition : sens unique respecté',
+                Exploration.destinationsFor(stairs, targetEndpoint).length === 0
+                && Exploration.moveThroughTransition(scout, stairs, targetEndpoint, sourceEndpoint) === false);
+            stairs.bidirectional = true;
+            const thirdFloor = Store.addFloor('Toit transition');
+            Store.addTransitionEndpoint(stairs, thirdFloor.id, 7.5, 2.5);
+            check('transition : ascenseur/passage à trois destinations pris en charge',
+                Exploration.destinationsFor(stairs, sourceEndpoint).length === 2
+                && !Store.isEffectivelyRevealed(thirdFloor, 'floor'));
+
+            const accessLock = Store.addEntity('keypad', phase6TargetFloor.id, 4, 4, 'VERROU');
+            stairs.accessEntityId = accessLock.id;
+            scout.floorId = phase6Floor.id;
+            scout.x = sourceEndpoint.x; scout.y = sourceEndpoint.y;
+            check('transition : contrôle d’accès actif bloque le passage',
+                Exploration.moveThroughTransition(scout, stairs, sourceEndpoint, targetEndpoint) === false);
+            Store.setEntityState(accessLock, 'hacked');
+            check('transition : contrôle d’accès piraté autorise le passage',
+                Exploration.moveThroughTransition(scout, stairs, sourceEndpoint, targetEndpoint) === true);
+
+            Store.ui.currentFloorId = phase6Floor.id;
+            Store.ui.selection = { kind: 'transition', id: stairs.id };
+            MapView.render();
+            Inspector.render();
+            check('transition : point rendu et inspecteur multi-étages',
+                document.querySelectorAll('.transition-endpoint').length === 1
+                && document.querySelector('#inspector-body input[type="text"]').value === 'Escalier technique'
+                && document.getElementById('inspector-body').textContent.includes('Points de passage'));
+            const endpointElement = document.querySelector('.transition-endpoint');
+            const endpointRect = board.getBoundingClientRect();
+            endpointElement.dispatchEvent(new PointerEvent('pointerdown', {
+                bubbles: true, pointerId: 23,
+                clientX: endpointRect.left + sourceEndpoint.x * endpointRect.width / 24,
+                clientY: endpointRect.top + sourceEndpoint.y * endpointRect.height / 16
+            }));
+            window.dispatchEvent(new PointerEvent('pointermove', {
+                bubbles: true, pointerId: 23,
+                clientX: endpointRect.left + 2.5 * endpointRect.width / 24,
+                clientY: endpointRect.top + 4.5 * endpointRect.height / 16
+            }));
+            window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 23 }));
+            check('transition : endpoint déplaçable sur la grille',
+                Math.abs(sourceEndpoint.x - 2.5) < 0.2 && Math.abs(sourceEndpoint.y - 4.5) < 0.2);
+            Visibility.render();
+            check('visibilité : pions, transitions et marqueur découvert présents',
+                document.getElementById('visibility-tree').textContent.includes('Pions PJ')
+                && document.getElementById('visibility-tree').textContent.includes('Transitions')
+                && document.getElementById('visibility-tree').textContent.includes('découvert'));
+
+            Store.resetDiscoveries(phase6Floor.id);
+            check('exploration : reset par étage sans toucher aux flags manuels',
+                !Store.isDiscovered('room', explorationRoom.id) && autoCamera.revealed === false);
+            Store.resetDiscoveries();
+            check('exploration : reset global idempotent', Store.getDiscoveries().length === 0);
+
+            Store.deleteToken(runner.id);
+            Store.deleteToken(copyRunner.id);
+            Store.deleteToken(scout.id);
+            Store.deleteTransition(stairs.id);
+            Store.deleteFloor(thirdFloor.id);
+            Store.deleteFloor(phase6Floor.id);
+            Store.ui.currentFloorId = floor0.id;
+            Store.ui.selection = null;
+            MapView.render();
+
+            // ===== Phase 1 : file de sauvegarde, révisions et conflits =====
+            const waitForQueue = () => new Promise(resolve => setTimeout(resolve, 10));
+            const originalCloud = window.Cloud;
+            const cloudCalls = [];
+            const cloudPending = [];
+            window.Cloud = {
+                savePlan(snapshot, options) {
+                    cloudCalls.push({ snapshot: JSON.parse(JSON.stringify(snapshot)), options });
+                    return new Promise((resolve, reject) => cloudPending.push({ resolve, reject }));
+                }
+            };
+            Store.setCloudActive(true);
+            Store.ui.readOnly = false;
+
+            const queuePlan = Store.getPlan();
+            queuePlan.revision = 0;
+            queuePlan.name = 'File — première version';
+            Store.touch();
+            const firstSave = Store.saveNow();
+            queuePlan.name = 'File — version la plus récente';
+            Store.touch();
+            Store.saveNow();
+            check('sauvegarde : une seule écriture cloud à la fois', cloudCalls.length === 1);
+
+            cloudPending[0].resolve({ revision: 1 });
+            await firstSave;
+            await waitForQueue();
+            check('sauvegarde : dernière version envoyée après confirmation',
+                cloudCalls.length === 2
+                && cloudCalls[1].snapshot.name === 'File — version la plus récente'
+                && cloudCalls[1].snapshot.revision === 1);
+            cloudPending[1].resolve({ revision: 2 });
+            await waitForQueue();
+            check('sauvegarde : révision locale mise à jour',
+                Store.getPlan().revision === 2 && !Store.hasPendingChanges());
+
+            const conflictRemote = JSON.parse(JSON.stringify(Store.getPlan()));
+            conflictRemote.revision = 3;
+            conflictRemote.updatedAt += 1000;
+            conflictRemote.name = 'Version distante concurrente';
+            Store.getPlan().name = 'Version locale concurrente';
+            Store.touch();
+            const conflictSave = Store.saveNow();
+            const conflictError = new Error('conflit simulé');
+            conflictError.code = 'revision-conflict';
+            conflictError.remotePlan = conflictRemote;
+            cloudPending[2].reject(conflictError);
+            await conflictSave;
+            check('conflit : version locale conservée et choix demandé',
+                Store.getConflict() !== null
+                && Store.getPlan().name === 'Version locale concurrente'
+                && Store.hasPendingChanges()
+                && document.getElementById('conflict-panel').hidden === false);
+
+            document.getElementById('conflict-use-remote').click();
+            check('conflit : chargement explicite de la version distante',
+                Store.getPlan().revision === 3
+                && Store.getPlan().name === 'Version distante concurrente'
+                && !Store.hasPendingChanges()
+                && document.getElementById('conflict-panel').hidden === true);
+
+            const forcePlan = Store.getPlan();
+            forcePlan.name = 'Version locale forcée';
+            Store.touch();
+            const newerRemote = JSON.parse(JSON.stringify(forcePlan));
+            newerRemote.revision = 4;
+            newerRemote.name = 'Autre version distante';
+            Store.markRemoteConflict(newerRemote);
+            const forceSave = Store.resolveConflictWithLocal();
+            check('conflit : écriture forcée uniquement après choix explicite',
+                cloudCalls.length === 4 && cloudCalls[3].options.force === true);
+            cloudPending[3].resolve({ revision: 5 });
+            await forceSave;
+            await waitForQueue();
+            check('conflit : version locale forcée synchronisée',
+                Store.getPlan().revision === 5
+                && Store.getPlan().name === 'Version locale forcée'
+                && !Store.hasPendingChanges());
+
+            Store.getPlan().name = 'Modification hors ligne';
+            Store.touch();
+            const offlineSave = Store.saveNow();
+            cloudPending[4].reject(new Error('réseau indisponible'));
+            await offlineSave;
+            check('hors ligne : copie locale conservée et reconnexion proposée',
+                Store.hasPendingChanges()
+                && document.getElementById('retry-cloud-btn').hidden === false);
+
+            const retrySave = Store.saveNow();
+            cloudPending[5].resolve({ revision: 6 });
+            await retrySave;
+            check('retour réseau : synchronisation reprise',
+                Store.getPlan().revision === 6
+                && !Store.hasPendingChanges()
+                && document.getElementById('retry-cloud-btn').hidden === true);
+
+            Store.getPlan().name = 'Sauvegarde pagehide';
+            Store.touch();
+            Store.handlePageHide();
+            const pagehideCopy = JSON.parse(localStorage.getItem('shadowrunbank_plan_v1'));
+            check('fermeture : copie locale écrite immédiatement',
+                pagehideCopy.name === 'Sauvegarde pagehide' && Store.hasPendingChanges());
+
+            Store.setCloudActive(false);
+            if (originalCloud) window.Cloud = originalCloud;
+            else delete window.Cloud;
+
+            const backupCountBeforeImport = Object.keys(localStorage)
+                .filter(key => key.startsWith('shadowrunbank_plan_backup_')).length;
+            const importedPlan = Store.createDefaultPlan();
+            importedPlan.name = 'Plan importé et validé';
+            Store.backupCurrentPlan('avant_import_test');
+            Store.replacePlan(importedPlan);
+            Store.handlePageHide();
+            const importedCopy = JSON.parse(localStorage.getItem('shadowrunbank_plan_v1'));
+            check('import : plan validé installé après sauvegarde de sécurité',
+                importedCopy.name === 'Plan importé et validé'
+                && Object.keys(localStorage)
+                    .filter(key => key.startsWith('shadowrunbank_plan_backup_')).length
+                    === backupCountBeforeImport + 1);
+            const roundTripPlan = Store.preparePlan(JSON.parse(Store.exportJson())).plan;
+            check('export/import : aller-retour JSON sans perte',
+                roundTripPlan.name === Store.getPlan().name
+                && roundTripPlan.floors.length === Store.getPlan().floors.length
+                && roundTripPlan.rooms.length === Store.getPlan().rooms.length
+                && roundTripPlan.entities.length === Store.getPlan().entities.length);
+
+            // ===== Phase 7 : historique, duplication et waypoints éditables =====
+            const historyPlan = Store.getPlan();
+            const originalHistoryName = historyPlan.name;
+            Store.resetHistory();
+            Store.beginTransaction('Renommer le plan');
+            historyPlan.name = 'Nom intermédiaire'; Store.touch();
+            historyPlan.name = 'Nom final groupé'; Store.touch();
+            Store.endTransaction();
+            check('historique : saisie continue groupée en une action',
+                Store.getHistoryState().length === 1 && Store.getHistoryState().canUndo);
+            check('historique : annuler restaure le plan',
+                Store.undo() === 'Renommer le plan' && Store.getPlan().name === originalHistoryName);
+            check('historique : rétablir restaure la modification',
+                Store.redo() === 'Renommer le plan' && Store.getPlan().name === 'Nom final groupé');
+
+            const phase7Floor = Store.sortedFloors()[0];
+            const sourceEntity = Store.addEntity('guard', phase7Floor.id, 3, 3, 'Garde phase 7');
+            sourceEntity.privateNote = 'copiée';
+            Store.resetHistory();
+            const entityCopy = Store.duplicateEntity(sourceEntity);
+            check('duplication : dispositif complet et décalé',
+                entityCopy.id !== sourceEntity.id && entityCopy.privateNote === 'copiée'
+                && entityCopy.x === sourceEntity.x + 0.5 && entityCopy.name.includes('copie'));
+            Store.undo();
+            check('duplication : dispositif annulable', !Store.findEntity(entityCopy.id));
+            Store.redo();
+            check('duplication : dispositif rétablissable', !!Store.findEntity(entityCopy.id));
+
+            const sourceDecor = Store.addDecor('counter', phase7Floor.id, 5, 5);
+            sourceDecor.playerInfo = 'visible';
+            Store.resetHistory();
+            const decorCopy = Store.duplicateDecor(sourceDecor);
+            check('duplication : décor complet et indépendant',
+                decorCopy.id !== sourceDecor.id && decorCopy.playerInfo === 'visible'
+                && decorCopy.x === sourceDecor.x + 0.5);
+
+            const editableGuard = Store.findEntity(entityCopy.id);
+            Store.createPatrol(editableGuard);
+            editableGuard.patrol.points.push({ x: 7, y: 4 }, { x: 9, y: 6 });
+            Store.resetHistory();
+            Store.movePatrolPoint(editableGuard, 2, 1);
+            check('waypoints : réordonner', editableGuard.patrol.points[1].x === 9);
+            Store.reversePatrol(editableGuard);
+            check('waypoints : inverser la ronde', editableGuard.patrol.points[0].x === 7);
+            const countBeforeWaypointDelete = editableGuard.patrol.points.length;
+            Store.removePatrolPoint(editableGuard, 1);
+            check('waypoints : supprimer un point',
+                editableGuard.patrol.points.length === countBeforeWaypointDelete - 1);
+            Store.ui.selection = { kind: 'entity', id: editableGuard.id };
+            MapView.render();
+            check('waypoints : poignées de déplacement rendues',
+                document.querySelectorAll('.patrol-waypoint').length === editableGuard.patrol.points.length);
+
+            Store.resetHistory();
+            for (let i = 0; i < 55; i++) {
+                Store.getPlan().name = 'Historique ' + i;
+                Store.touch('Action ' + i);
+            }
+            check('historique : limite de 50 actions', Store.getHistoryState().length === 50);
+            check('header : boutons annuler/rétablir synchronisés',
+                !document.getElementById('undo-btn').disabled
+                && document.getElementById('redo-btn').disabled);
         } catch (err) {
             out.push('ERROR :: ' + err.message + '\n' + err.stack);
         }
