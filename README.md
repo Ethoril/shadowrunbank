@@ -61,10 +61,12 @@ de ronde peuvent être déplacés sur la carte, supprimés, réordonnés ou inve
 `⌘/Ctrl+V` copient puis collent un dispositif ou un décor sur l'étage courant. Les couvertures
 peuvent retrouver en un clic les paramètres par défaut de leur type.
 
-En mode joueur, la carte devient prioritaire sur tablette. L'inspecteur s'ouvre dans un tiroir
-latéral en paysage et dans un tiroir inférieur en portrait, avec des commandes tactiles de 44 px.
-La mise en page couvre la tablette cible en 2304×1440 natif ainsi que son viewport logique lorsque
-le navigateur applique une densité de pixels supérieure à 1.
+La mise en page est responsive sur ordinateur et tablette. Le mode MJ conserve trois colonnes sur
+MacBook, puis transforme les outils et l'inspecteur en tiroirs sur ordinateur compact ; en portrait,
+ces tiroirs remontent depuis le bas. En mode joueur, la carte reste prioritaire et l'inspecteur suit
+le même principe, avec des commandes tactiles de 44 px. Les panneaux Versions et Conflit deviennent
+des modales contenues aux petites largeurs. La matrice automatisée couvre 1440×900, 1280×800,
+1024×768, 768×1024 ainsi que la tablette cible en 2304×1440 et 1440×2304 natifs.
 
 Le bouton `⛨ Versions` ouvre les 15 dernières sauvegardes locales et Firestore. Il permet de créer,
 restaurer ou supprimer une version ; une copie de l'état courant est automatiquement conservée avant

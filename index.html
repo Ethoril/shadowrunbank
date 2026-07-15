@@ -5,13 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shadowrun Bank Planner :: Overlord_View</title>
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=11">
+    <link rel="stylesheet" href="css/style.css?v=13">
 </head>
 <body>
 
     <header>
         <h1>[OVERLORD_TOPOLOGY] :: Surveillance Réseau Banque</h1>
         <div class="header-right">
+            <div class="layout-controls" aria-label="Panneaux de l’éditeur">
+                <button id="tools-toggle" type="button" aria-controls="tools-panel" aria-expanded="false">☰ Outils</button>
+                <button id="inspector-toggle" type="button" aria-controls="inspector-panel" aria-expanded="false">ⓘ Inspecteur</button>
+            </div>
             <span id="save-status"></span>
             <div id="status-ticker">SYSTEM_BOOT…</div>
             <div class="history-controls" aria-label="Historique d'édition">
@@ -68,6 +72,10 @@
     <div class="app-container">
         <!-- Palette d'outils (générée par editor.js) + arbre de visibilité (visibility.js) -->
         <div class="panel" id="tools-panel">
+            <div class="drawer-title">
+                <span>Commandes MJ</span>
+                <button id="tools-close" type="button" aria-label="Fermer les outils">×</button>
+            </div>
             <div class="panel-tabs">
                 <button class="panel-tab active" data-tab="tools">Outils</button>
                 <button class="panel-tab" data-tab="visibility">Visibilité</button>
@@ -120,18 +128,19 @@
         </div>
         <button id="player-inspector-toggle" type="button" aria-label="Ouvrir l'inspecteur">ⓘ Infos</button>
     </div>
+    <button id="panel-backdrop" type="button" aria-label="Fermer le panneau ouvert"></button>
 
-    <script src="js/catalog.js?v=11"></script>
-    <script src="js/store.js?v=11"></script>
-    <script src="js/anim.js?v=11"></script>
-    <script src="js/map.js?v=11"></script>
-    <script src="js/exploration.js?v=11"></script>
-    <script src="js/inspector.js?v=11"></script>
-    <script src="js/editor.js?v=11"></script>
-    <script src="js/visibility.js?v=11"></script>
-    <script src="js/main.js?v=11"></script>
+    <script src="js/catalog.js?v=13"></script>
+    <script src="js/store.js?v=13"></script>
+    <script src="js/anim.js?v=13"></script>
+    <script src="js/map.js?v=13"></script>
+    <script src="js/exploration.js?v=13"></script>
+    <script src="js/inspector.js?v=13"></script>
+    <script src="js/editor.js?v=13"></script>
+    <script src="js/visibility.js?v=13"></script>
+    <script src="js/main.js?v=13"></script>
     <!-- Firebase (phase 3) : module ES ; en cas d'échec de chargement
          (file://, hors-ligne), l'appli reste en mode localStorage. -->
-    <script type="module" src="js/cloud.js?v=11"></script>
+    <script type="module" src="js/cloud.js?v=13"></script>
 </body>
 </html>
