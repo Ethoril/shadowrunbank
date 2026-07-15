@@ -1,10 +1,49 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null
+             && request.auth.token.email == 'ethoril@gmail.com';
+    }
+
     match /plans/{planId} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && request.auth.token.email == 'ethoril@gmail.com';
+      allow write: if isAdmin()
+                   && request.resource.data.schemaVersion == 2
+                   && request.resource.data.revision is int
+                   && request.resource.data.revision >= 1;
+
+      match /tokens/{tokenId} {
+        allow read: if true;
+        allow create, delete: if isAdmin();
+        allow update: if isAdmin() || (
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['floorId', 'x', 'y', 'updatedAt'])
+          && request.resource.data.floorId is string
+          && request.resource.data.x is number
+          && request.resource.data.y is number
+          && request.resource.data.x >= 0 && request.resource.data.x <= 100
+          && request.resource.data.y >= 0 && request.resource.data.y <= 100
+        );
+      }
+
+      match /discoveries/{discoveryId} {
+        allow read: if true;
+        allow create: if request.resource.data.kind is string
+          && request.resource.data.elementId is string
+          && request.resource.data.floorId is string
+          && request.resource.data.discoveredBy is string;
+        allow update: if request.resource.data.kind == resource.data.kind
+          && request.resource.data.elementId == resource.data.elementId
+          && request.resource.data.floorId == resource.data.floorId
+          && request.resource.data.discoveredBy == resource.data.discoveredBy
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['discoveredAt']);
+        allow delete: if isAdmin();
+      }
+
+      match /snapshots/{snapshotId} {
+        allow read, write: if isAdmin();
+      }
     }
   }
 }

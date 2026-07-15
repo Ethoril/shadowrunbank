@@ -1,0 +1,16 @@
+{
+  "name": "shadowrun-bank-planner",
+  "version": "2.0.0",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "description": "Plan interactif Shadowrun — application statique et tests de non-régression.",
+  "scripts": {
+    "build": "node scripts/build-site.mjs",
+    "test": "pnpm test:unit && pnpm test:integration",
+    "test:unit": "node --test tests/unit/*.test.cjs",
+    "test:integration": "node --test tests/integration/*.test.cjs"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1"
+  }
+}

@@ -1,1 +1,4 @@
 .claude/
+node_modules/
+_site/
+test-results/

@@ -276,48 +276,48 @@ Règles :
 
 ### Structurels
 
-- [ ] Mur ou cloison
-- [ ] Pilier
-- [ ] Porte opaque
-- [ ] Ouverture ou passage
-- [ ] Vitre
-- [ ] Grille
-- [ ] Escalier
-- [ ] Ascenseur existant
+- [x] Mur ou cloison
+- [x] Pilier
+- [x] Porte opaque
+- [x] Ouverture ou passage
+- [x] Vitre
+- [x] Grille
+- [x] Escalier
+- [x] Ascenseur existant
 
 ### Mobilier occultant
 
-- [ ] Comptoir
-- [ ] Bureau
-- [ ] Armoire
-- [ ] Étagère
-- [ ] Coffre ou coffre-fort
-- [ ] Caisse
-- [ ] Serveur ou baie informatique
-- [ ] Grande plante ou séparation opaque
+- [x] Comptoir
+- [x] Bureau
+- [x] Armoire
+- [x] Étagère
+- [x] Coffre ou coffre-fort
+- [x] Caisse
+- [x] Serveur ou baie informatique
+- [x] Grande plante ou séparation opaque
 
 ### Décor non occultant
 
-- [ ] Chaise
-- [ ] Banc
-- [ ] Tapis
-- [ ] Marquage au sol
-- [ ] Petit mobilier
-- [ ] Élément purement visuel
+- [x] Chaise
+- [x] Banc
+- [x] Tapis
+- [x] Marquage au sol
+- [x] Petit mobilier
+- [x] Élément purement visuel
 
 ## 6.3 Outils d'édition
 
-- [ ] Palette de décors dédiée
-- [ ] Placement
-- [ ] Déplacement
-- [ ] Largeur et hauteur
-- [ ] Rotation par pas de 90 degrés
-- [ ] Duplication
-- [ ] Suppression
-- [ ] Révélation aux joueurs
-- [ ] Choix des canaux de vision bloqués
-- [ ] Choix du blocage de déplacement
-- [ ] Notes MJ et informations joueurs
+- [x] Palette de décors dédiée
+- [x] Placement
+- [x] Déplacement
+- [x] Largeur et hauteur
+- [x] Rotation par pas de 90 degrés
+- [x] Duplication
+- [x] Suppression
+- [x] Révélation aux joueurs
+- [x] Choix des canaux de vision bloqués
+- [x] Choix du blocage de déplacement
+- [x] Notes MJ et informations joueurs
 
 ## 6.4 Ordre de rendu
 
@@ -365,24 +365,24 @@ Modèle proposé :
 
 Fonctions MJ :
 
-- [ ] Créer un pion
-- [ ] Nommer le personnage
-- [ ] Choisir couleur, initiales ou icône
-- [ ] Placer et déplacer le pion
-- [ ] Autoriser ou interdire le déplacement joueur
-- [ ] Verrouiller temporairement le pion
-- [ ] Téléporter manuellement le pion vers un étage
-- [ ] Masquer ou afficher le pion
-- [ ] Dupliquer et supprimer le pion
+- [x] Créer un pion
+- [x] Nommer le personnage
+- [x] Choisir couleur, initiales ou icône
+- [x] Placer et déplacer le pion
+- [x] Autoriser ou interdire le déplacement joueur
+- [x] Verrouiller temporairement le pion
+- [x] Téléporter manuellement le pion vers un étage
+- [x] Masquer ou afficher le pion
+- [x] Dupliquer et supprimer le pion
 
 Fonctions joueur :
 
-- [ ] Sélectionner un pion autorisé au toucher
-- [ ] Le déplacer par glisser-déposer
-- [ ] Conserver un mouvement fluide localement
-- [ ] Enregistrer la position au relâchement
-- [ ] Recevoir en direct les déplacements effectués sur les autres écrans
-- [ ] Annuler visuellement le déplacement si le pion est verrouillé
+- [x] Sélectionner un pion autorisé au toucher
+- [x] Le déplacer par glisser-déposer
+- [x] Conserver un mouvement fluide localement
+- [x] Enregistrer la position au relâchement
+- [x] Recevoir en direct les déplacements effectués sur les autres écrans
+- [x] Refuser le déplacement si le pion est verrouillé
 
 Contraintes tactiles :
 
@@ -492,16 +492,16 @@ Parcours MJ proposé :
 
 Outils :
 
-- [ ] Créer une liaison
-- [ ] Ajouter un endpoint à une liaison
-- [ ] Retirer un endpoint
-- [ ] Déplacer un endpoint
-- [ ] Renommer la liaison
-- [ ] Choisir escalier, ascenseur, échelle, trappe ou passage
-- [ ] Choisir sens unique ou bidirectionnel
-- [ ] Activer ou désactiver la liaison
-- [ ] Révéler ou cacher la liaison
-- [ ] Associer éventuellement un maglock ou un contrôle d'accès
+- [x] Créer une liaison
+- [x] Ajouter un endpoint à une liaison
+- [x] Retirer un endpoint
+- [x] Déplacer un endpoint
+- [x] Renommer la liaison
+- [x] Choisir escalier, ascenseur, échelle, trappe ou passage
+- [x] Choisir sens unique ou bidirectionnel
+- [x] Activer ou désactiver la liaison
+- [x] Révéler ou cacher la liaison
+- [x] Associer éventuellement un maglock ou un contrôle d'accès
 
 L'ascenseur existant doit pouvoir être converti en liaison sans supprimer
 automatiquement les anciennes données.
@@ -569,31 +569,31 @@ traitée. Une découverte effectuée reste acquise même si le pion revient en a
 
 Contrôles MJ :
 
-- [ ] Activer ou désactiver la découverte automatique d'un élément
-- [ ] Distinguer révélation manuelle et découverte en partie
-- [ ] Réinitialiser les découvertes d'un étage
-- [ ] Réinitialiser toutes les découvertes
-- [ ] Révéler ou cacher manuellement sans supprimer l'historique de découverte
-- [ ] Voir quel pion a découvert un élément
+- [x] Activer ou désactiver la découverte automatique d'un élément
+- [x] Distinguer révélation manuelle et découverte en partie
+- [x] Réinitialiser les découvertes d'un étage
+- [x] Réinitialiser toutes les découvertes
+- [x] Révéler ou cacher manuellement sans supprimer l'historique de découverte
+- [x] Voir quel pion a découvert un élément
 
 ## 7.7 Critères de validation
 
-- [ ] Un pion se déplace correctement au doigt
-- [ ] Le MJ peut verrouiller son déplacement
-- [ ] Deux écrans voient la nouvelle position après relâchement
-- [ ] Un escalier relie exactement deux endpoints
-- [ ] Un ascenseur dessert au moins trois étages
-- [ ] Une destination inconnue autorisée peut être rejointe
-- [ ] Une transition désactivée ne peut pas être utilisée
-- [ ] Le changement d'étage place le pion au bon endpoint
-- [ ] La tablette affiche automatiquement l'étage d'arrivée
-- [ ] L'étage et la salle d'arrivée sont révélés si nécessaire
-- [ ] Entrer dans une salle cachée la révèle sur tous les écrans
-- [ ] Une caméra visible dans la salle est découverte
-- [ ] Un garde masqué par un décor opaque reste caché
-- [ ] Une caméra découverte ne révèle pas automatiquement son cône
-- [ ] Un garde découvert ne révèle pas automatiquement sa ronde
-- [ ] Aucun déplacement de pion n'écrase une modification du plan
+- [x] Un pion se déplace correctement au doigt
+- [x] Le MJ peut verrouiller son déplacement
+- [ ] Deux écrans voient la nouvelle position après relâchement — à valider après déploiement des règles
+- [x] Un escalier relie exactement deux endpoints
+- [x] Un ascenseur dessert au moins trois étages
+- [x] Une destination inconnue autorisée peut être rejointe
+- [x] Une transition désactivée ne peut pas être utilisée
+- [x] Le changement d'étage place le pion au bon endpoint
+- [x] La tablette affiche automatiquement l'étage d'arrivée
+- [x] L'étage et la salle d'arrivée sont révélés si nécessaire
+- [ ] Entrer dans une salle cachée la révèle sur tous les écrans — à valider après déploiement des règles
+- [x] Une caméra visible dans la salle est découverte
+- [x] Un garde masqué par un décor opaque reste caché
+- [x] Une caméra découverte ne révèle pas automatiquement son cône
+- [x] Un garde découvert ne révèle pas automatiquement sa ronde
+- [x] Aucun déplacement de pion n'écrase une modification du plan
 
 ---
 
@@ -601,22 +601,22 @@ Contrôles MJ :
 
 | Élément | Identifiant proposé | Comportement | État |
 |---|---|---|---|
-| Portique MAD | mad_gate | Seuil magnétique, réseau | À faire |
-| Maglock | maglock | Contrôle d'accès | Partiel |
-| Scanner rétinien | retina_scanner | Contrôle biométrique ponctuel | À faire |
-| Analyse ADN | dna_analyzer | Contrôle biométrique ponctuel | À faire |
-| Caméra | camera | Cône optique, balayage | Existant |
-| Détecteur infrarouge | infrared_motion_sensor | Cône ou zone infrarouge | À faire |
-| Laser de détection | detection_laser | Faisceau arrêté par les obstacles | À faire |
-| Plaque de pression | pressure_plate | Zone rectangulaire au sol | À faire |
-| Micro-drone de sécurité | micro_security_drone | Mobile, ronde, petit cône | À faire |
-| Drone de combat | combat_drone | Mobile, ronde, cône, profil armé | À faire |
-| Tourelle automatique | automatic_turret | Cône optique, balayage, profil armé | Partiel |
-| Garde armé | armed_guard | Mobile, ronde, perception | Partiel |
-| Mage de sécurité | security_mage | Mobile, ronde, perception astrale | À faire |
-| Grille d'acier | steel_grate | Barrière de déplacement | À faire |
-| Barrière de mana | mana_barrier | Barrière astrale | Partiel |
-| Esprit de patrouille | patrol_spirit | Mobile, ronde, détection astrale | À faire |
+| Portique MAD | mad_gate | Seuil magnétique, réseau | Terminé |
+| Maglock | maglock | Contrôle d'accès | Terminé |
+| Scanner rétinien | retina_scanner | Contrôle biométrique ponctuel | Terminé |
+| Analyse ADN | dna_analyzer | Contrôle biométrique ponctuel | Terminé |
+| Caméra | camera | Cône optique, balayage | Terminé |
+| Détecteur infrarouge | infrared_motion_sensor | Cône ou zone infrarouge | Terminé |
+| Laser de détection | detection_laser | Faisceau arrêté par les obstacles | Terminé |
+| Plaque de pression | pressure_plate | Zone rectangulaire au sol | Terminé |
+| Micro-drone de sécurité | micro_security_drone | Mobile, ronde, petit cône | Terminé |
+| Drone de combat | combat_drone | Mobile, ronde, cône, profil armé | Terminé |
+| Tourelle automatique | automatic_turret | Cône optique, balayage, profil armé | Terminé |
+| Garde armé | armed_guard | Mobile, ronde, perception | Terminé |
+| Mage de sécurité | security_mage | Mobile, ronde, perception astrale | Terminé |
+| Grille d'acier | steel_grate | Barrière de déplacement | Terminé |
+| Barrière de mana | mana_barrier | Barrière astrale | Terminé |
+| Esprit de patrouille | patrol_spirit | Mobile, ronde, détection astrale | Terminé |
 
 Éléments utilitaires conservés :
 
@@ -626,14 +626,14 @@ Contrôles MJ :
 
 ## 8.1 Migration des types existants
 
-- [ ] **camera** reste **camera**
-- [ ] **maglock** reste **maglock**
-- [ ] **turret** devient **automatic_turret**
-- [ ] **barrier** devient **mana_barrier**
-- [ ] **guard** devient **armed_guard**
-- [ ] **drone** reste « Drone à préciser » jusqu'au choix du MJ
-- [ ] **sensor** reste générique jusqu'à reclassement manuel
-- [ ] Préserver identifiants, positions, révélations, rondes et liaisons réseau
+- [x] **camera** reste **camera**
+- [x] **maglock** reste **maglock**
+- [x] **turret** devient **automatic_turret**
+- [x] **barrier** devient **mana_barrier**
+- [x] **guard** devient **armed_guard**
+- [x] **drone** reste « Drone à préciser » jusqu'au choix du MJ
+- [x] **sensor** reste générique jusqu'à reclassement manuel
+- [x] Préserver identifiants, positions, révélations, rondes et liaisons réseau
 
 ---
 
@@ -641,10 +641,10 @@ Contrôles MJ :
 
 ## 9.1 File séquentielle
 
-- [ ] Une seule écriture Firestore à la fois
-- [ ] Mise en attente d'une nouvelle sauvegarde si une écriture est en cours
-- [ ] Envoi automatique de la version la plus récente après confirmation
-- [ ] États d'interface distincts :
+- [x] Une seule écriture Firestore à la fois
+- [x] Mise en attente d'une nouvelle sauvegarde si une écriture est en cours
+- [x] Envoi automatique de la version la plus récente après confirmation
+- [x] États d'interface distincts :
   - modification locale ;
   - sauvegarde en cours ;
   - synchronisé ;
@@ -653,43 +653,43 @@ Contrôles MJ :
 
 ## 9.2 Révisions et conflits
 
-- [ ] Ajouter une révision serveur
-- [ ] Sauvegarder avec une transaction Firestore
-- [ ] Refuser une écriture basée sur une ancienne révision
-- [ ] Proposer en cas de conflit :
+- [x] Ajouter une révision serveur
+- [x] Sauvegarder avec une transaction Firestore
+- [x] Refuser une écriture basée sur une ancienne révision
+- [x] Proposer en cas de conflit :
   - charger la version distante ;
   - forcer la version locale avec confirmation ;
   - exporter la version locale avant remplacement.
 
 ## 9.3 Fermeture de page
 
-- [ ] Écrire immédiatement le plan local lors de **pagehide**
-- [ ] Conserver un marqueur **dirty** si Firestore n'a pas confirmé
-- [ ] Reprendre la synchronisation au prochain démarrage
+- [x] Écrire immédiatement le plan local lors de **pagehide**
+- [x] Conserver un marqueur **dirty** si Firestore n'a pas confirmé
+- [x] Reprendre la synchronisation au prochain démarrage
 
 ## 9.4 Sauvegardes et historique
 
-- [ ] Export JSON manuel
-- [ ] Import JSON avec validation et prévisualisation
-- [ ] Sauvegarde automatique avant migration
-- [ ] Snapshots nommés ou horodatés
-- [ ] Conservation des 10 à 20 dernières versions importantes
+- [x] Export JSON manuel
+- [x] Import JSON avec validation et prévisualisation
+- [x] Sauvegarde automatique avant migration
+- [x] Snapshots nommés ou horodatés
+- [x] Conservation des 10 à 20 dernières versions importantes
 
 ---
 
 ## 10. Corrections fonctionnelles immédiates
 
-- [ ] Arrêter et figer une ronde lorsque l'entité passe hors ligne ou est neutralisée
-- [ ] Préserver la position courante lors d'un changement de vitesse
-- [ ] Préserver la position courante lors du passage boucle / aller-retour
-- [ ] Changer automatiquement d'étage depuis l'arbre Visibilité
-- [ ] Séparer notes MJ et informations joueurs
-- [ ] Sauvegarder localement à la fermeture
-- [ ] Reconnecter Firestore ou afficher une action claire après une erreur
-- [ ] Empêcher les dispositifs de sortir visuellement de la grille
-- [ ] Normaliser portée, angle, vitesse et dimensions
-- [ ] Demander confirmation avant « Tout révéler »
-- [ ] Adapter le texte de l'inspecteur vide au mode joueur
+- [x] Arrêter et figer une ronde lorsque l'entité passe hors ligne ou est neutralisée
+- [x] Préserver la position courante lors d'un changement de vitesse
+- [x] Préserver la position courante lors du passage boucle / aller-retour
+- [x] Changer automatiquement d'étage depuis l'arbre Visibilité
+- [x] Séparer notes MJ et informations joueurs
+- [x] Sauvegarder localement à la fermeture
+- [x] Reconnecter Firestore ou afficher une action claire après une erreur
+- [x] Empêcher les dispositifs de sortir visuellement de la grille
+- [x] Normaliser portée, angle, vitesse et dimensions
+- [x] Demander confirmation avant « Tout révéler »
+- [x] Adapter le texte de l'inspecteur vide au mode joueur
 
 ---
 
@@ -716,22 +716,22 @@ Une entrée d'historique doit représenter une action logique :
 
 ## 11.2 Historique local
 
-- [ ] Annuler
-- [ ] Rétablir
-- [ ] Limiter l'historique à environ 50 actions
-- [ ] Grouper la saisie continue d'un même champ
-- [ ] Ne pas enregistrer les frames d'animation
+- [x] Annuler
+- [x] Rétablir
+- [x] Limiter l'historique à environ 50 actions
+- [x] Grouper la saisie continue d'un même champ
+- [x] Ne pas enregistrer les frames d'animation
 
 ## 11.3 Outils complémentaires
 
-- [ ] Dupliquer un dispositif
-- [ ] Dupliquer un décor
-- [ ] Copier et coller
-- [ ] Supprimer le dernier waypoint
-- [ ] Déplacer un waypoint
-- [ ] Réordonner ou inverser une ronde
-- [ ] Réinitialiser une couverture
-- [ ] Centrer la carte sur un élément sélectionné dans l'arbre
+- [x] Dupliquer un dispositif
+- [x] Dupliquer un décor
+- [x] Copier et coller
+- [x] Supprimer le dernier waypoint
+- [x] Déplacer un waypoint
+- [x] Réordonner ou inverser une ronde
+- [x] Réinitialiser une couverture
+- [x] Centrer et focaliser la carte sur un élément sélectionné dans l'arbre
 
 ---
 
@@ -739,7 +739,7 @@ Une entrée d'historique doit représenter une action logique :
 
 ## 12.1 MacBook MJ
 
-- [ ] Palette regroupée en catégories :
+- [x] Palette regroupée en catégories :
   - Structure ;
   - Accès ;
   - Détection ;
@@ -747,25 +747,27 @@ Une entrée d'historique doit représenter une action logique :
   - Personnel ;
   - Magie ;
   - Décors.
-- [ ] Catégories repliables
-- [ ] Inspecteur dynamique selon les capacités
-- [ ] Boutons Annuler, Rétablir et Export dans le header
-- [ ] Arbre Visibilité enrichi avec décors et couvertures
+- [x] Catégories repliables
+- [x] Inspecteur dynamique selon les capacités
+- [x] Boutons Annuler, Rétablir et Export dans le header
+- [x] Arbre Visibilité enrichi avec décors
+- [x] Arbre Visibilité enrichi avec couvertures
 
 ## 12.2 Tablette joueur
 
 Cibles :
 
-- 1024 × 768 en paysage ;
-- 768 × 1024 en portrait acceptable.
+- **2304 × 1440 en paysage** (résolution native de la tablette retenue) ;
+- **1440 × 2304 en portrait** ;
+- viewport logique haute densité également pris en charge (par exemple 1152 × 720 à DPR 2).
 
 Travaux :
 
-- [ ] Donner la priorité à la carte
-- [ ] Transformer l'inspecteur en panneau ou tiroir refermable
-- [ ] Agrandir les zones tactiles à environ 40–44 px
-- [ ] Simplifier le header en mode joueur
-- [ ] Vérifier l'absence de débordement horizontal
+- [x] Donner la priorité à la carte
+- [x] Transformer l'inspecteur en panneau ou tiroir refermable
+- [x] Agrandir les zones tactiles à environ 40–44 px
+- [x] Simplifier le header en mode joueur
+- [x] Vérifier l'absence de débordement horizontal
 - [ ] Tester les changements d'étage au toucher
 - [ ] Tester le déplacement tactile des pions
 - [ ] Tester la confirmation des transitions
@@ -777,93 +779,94 @@ Travaux :
 
 ### store.js
 
-- [ ] Schéma v2
-- [ ] Validation
-- [ ] Migrations
-- [ ] Collection **decors**
-- [ ] Collection **transitions**
-- [ ] Accesseurs et état local des pions
-- [ ] Registre local des découvertes
-- [ ] Calcul de visibilité effective : manuel ou découvert
-- [ ] Transactions d'édition
-- [ ] Annuler et rétablir
-- [ ] File de sauvegarde
-- [ ] Révisions
+- [x] Schéma v2
+- [x] Validation
+- [x] Migrations
+- [x] Collection **decors**
+- [x] Collection **transitions**
+- [x] Accesseurs et état local des pions
+- [x] Registre local des découvertes
+- [x] Calcul de visibilité effective : manuel ou découvert
+- [x] Transactions d'édition
+- [x] Annuler et rétablir
+- [x] File de sauvegarde
+- [x] Révisions
 
 ### map.js
 
-- [ ] Rendu des décors
-- [ ] Rendu et drag tactile des pions
-- [ ] Rendu des endpoints de transition
-- [ ] Détection des salles traversées par un pion
-- [ ] Tests de ligne de vue entre pion et éléments découvrables
-- [ ] Moteur de couverture générique
-- [ ] Occlusion par canal
-- [ ] Cache des segments occultants
-- [ ] Faisceaux, rectangles, cercles et seuils
+- [x] Rendu des décors
+- [x] Rendu et drag tactile des pions
+- [x] Rendu des endpoints de transition
+- [x] Détection des salles traversées par un pion
+- [x] Tests de ligne de vue entre pion et éléments découvrables
+- [x] Moteur de couverture générique
+- [x] Occlusion par canal
+- [x] Cache des segments occultants
+- [x] Faisceaux, rectangles, cercles et seuils
 
 ### editor.js
 
-- [ ] Palette catégorisée
-- [ ] Placement des décors
-- [ ] Rotation et redimensionnement
+- [x] Palette catégorisée
+- [x] Placement des décors
+- [x] Rotation et redimensionnement
 - [ ] Outils de zones et faisceaux
-- [ ] Outil de création des transitions
-- [ ] Création et configuration des pions
-- [ ] Édition des waypoints
+- [x] Outil de création des transitions
+- [x] Création et configuration des pions
+- [x] Édition des waypoints
 
 ### inspector.js
 
-- [ ] Champs générés selon les capacités
-- [ ] Notes MJ et informations joueurs
-- [ ] Profils d'état
-- [ ] Paramètres des couvertures
-- [ ] Paramètres d'occlusion
-- [ ] Inspecteur de pion
-- [ ] Inspecteur de transition
-- [ ] Réglage **autoDiscover**
-- [ ] Affichage de l'origine d'une révélation
+- [x] Champs générés selon les capacités
+- [x] Notes MJ et informations joueurs
+- [x] Profils d'état
+- [x] Paramètres des couvertures
+- [x] Paramètres d'occlusion
+- [x] Inspecteur de pion
+- [x] Inspecteur de transition
+- [x] Réglage **autoDiscover**
+- [x] Affichage de l'origine d'une révélation
 
 ### visibility.js
 
-- [ ] Navigation vers l'étage sélectionné
-- [ ] Branches Décors et Couvertures
-- [ ] Branche Transitions
-- [ ] Indication révélation manuelle ou découverte
-- [ ] Commandes de réinitialisation des découvertes
-- [ ] Actions globales avec confirmation
-- [ ] Indication claire du contenu révélé
+- [x] Navigation vers l'étage sélectionné
+- [x] Branche Décors
+- [x] Branches Couvertures
+- [x] Branche Transitions
+- [x] Indication révélation manuelle ou découverte
+- [x] Commandes de réinitialisation des découvertes
+- [x] Actions globales avec confirmation
+- [x] Indication claire du contenu révélé
 
 ### cloud.js
 
-- [ ] Transactions Firestore
-- [ ] Révisions
-- [ ] Conflits
-- [ ] Snapshots
-- [ ] Reconnexion
-- [ ] Reprise des sauvegardes locales
-- [ ] Abonnement temps réel aux pions
-- [ ] Écriture légère des positions de pions
-- [ ] Abonnement temps réel aux découvertes
-- [ ] Écriture idempotente des découvertes
+- [x] Transactions Firestore
+- [x] Révisions
+- [x] Conflits
+- [x] Snapshots
+- [x] Reconnexion sécurisée avec conservation locale avant rechargement
+- [x] Reprise des sauvegardes locales
+- [x] Abonnement temps réel aux pions
+- [x] Écriture légère des positions de pions
+- [x] Abonnement temps réel aux découvertes
+- [x] Écriture idempotente des découvertes
 
 ### firestore.rules
 
-- [ ] Écriture toujours réservée au MJ
-- [ ] Validation minimale de **schemaVersion**
-- [ ] Validation minimale de **revision**
-- [ ] Autorisation de la collection de snapshots
-- [ ] Écriture joueur limitée aux coordonnées des pions
-- [ ] Création joueur limitée aux documents de découverte
+- [x] Document principal et configuration toujours réservés au MJ
+- [x] Validation minimale de **schemaVersion**
+- [x] Validation minimale de **revision**
+- [x] Autorisation de la collection de snapshots
+- [x] Écriture joueur limitée aux coordonnées des pions
+- [x] Création joueur limitée aux documents de découverte
 
 ### css/style.css
 
-- [ ] Palette catégorisée
-- [ ] Mise en page MacBook
-- [ ] Mise en page tablette paysage
-- [ ] Mise en page tablette portrait
-- [ ] Tiroir de l'inspecteur joueur
-- [ ] Cibles tactiles des pions et transitions
+- [x] Palette catégorisée
+- [x] Mise en page MacBook
+- [x] Mise en page tablette paysage
+- [x] Mise en page tablette portrait
+- [x] Tiroir de l'inspecteur joueur
+- [x] Cibles tactiles des pions et transitions
 
 ---
 
@@ -873,10 +876,10 @@ Travaux :
 
 Durée indicative : 0,5 à 1 jour.
 
-- [ ] Exporter le plan actuel
-- [ ] Créer une fixture de référence
-- [ ] Ajouter **schemaVersion**
-- [ ] Figer les tests de non-régression
+- [x] Exporter le plan actuel
+- [x] Créer une fixture de référence
+- [x] Ajouter **schemaVersion**
+- [x] Figer les tests de non-régression
 
 **Critère de sortie :** le plan actuel peut être restauré intégralement.
 
@@ -884,14 +887,14 @@ Durée indicative : 0,5 à 1 jour.
 
 Durée indicative : 2 à 3 jours.
 
-- [ ] Validation et migration
-- [ ] Notes privées et informations joueurs
-- [ ] File de sauvegarde
-- [ ] Révisions et conflits
-- [ ] Sauvegarde à la fermeture
-- [ ] Corrections des rondes
-- [ ] Correction de l'arbre Visibilité
-- [ ] Export et import JSON
+- [x] Validation et migration
+- [x] Notes privées et informations joueurs
+- [x] File de sauvegarde
+- [x] Révisions et conflits
+- [x] Sauvegarde à la fermeture
+- [x] Corrections des rondes
+- [x] Correction de l'arbre Visibilité
+- [x] Export et import JSON
 
 **Critère de sortie :** deux machines ne peuvent plus s'écraser silencieusement.
 
@@ -899,11 +902,11 @@ Durée indicative : 2 à 3 jours.
 
 Durée indicative : 1 à 2 jours.
 
-- [ ] Nouveau catalogue
-- [ ] Catégories
-- [ ] Profils d'état
-- [ ] Adaptateur pour les anciens types
-- [ ] Inspecteur piloté par les capacités
+- [x] Nouveau catalogue
+- [x] Catégories
+- [x] Profils d'état
+- [x] Adaptateur pour les anciens types
+- [x] Inspecteur piloté par les capacités
 
 **Critère de sortie :** un nouveau dispositif peut être ajouté sans disperser de
 conditions particulières dans plusieurs fichiers.
@@ -912,13 +915,13 @@ conditions particulières dans plusieurs fichiers.
 
 Durée indicative : 2 à 3 jours.
 
-- [ ] Cônes génériques
-- [ ] Faisceaux
-- [ ] Rectangles
-- [ ] Cercles
-- [ ] Seuils
-- [ ] Canaux de détection
-- [ ] Révélation indépendante
+- [x] Cônes génériques
+- [x] Faisceaux
+- [x] Rectangles
+- [x] Cercles
+- [x] Seuils
+- [x] Canaux de détection
+- [x] Révélation indépendante
 
 **Critère de sortie :** chaque forme est éditable, révélable et correctement rendue.
 
@@ -926,16 +929,16 @@ Durée indicative : 2 à 3 jours.
 
 Durée indicative : 2 à 3 jours.
 
-- [ ] Modèle des décors
-- [ ] Palette
-- [ ] Placement
-- [ ] Déplacement
-- [ ] Rotation
-- [ ] Redimensionnement
-- [ ] Rendu
-- [ ] Occlusion
-- [ ] Cache des segments
-- [ ] Visibilité joueur
+- [x] Modèle des décors
+- [x] Palette
+- [x] Placement
+- [x] Déplacement
+- [x] Rotation
+- [x] Redimensionnement
+- [x] Rendu
+- [x] Occlusion
+- [x] Cache des segments
+- [x] Visibilité joueur
 
 **Critère de sortie :** placer une armoire ou un comptoir modifie immédiatement le
 champ de vision d'une caméra.
@@ -946,11 +949,11 @@ Durée indicative : 2 à 4 jours.
 
 Ordre conseillé :
 
-1. accès et barrières ;
-2. capteurs statiques ;
-3. défenses armées ;
-4. personnel et entités magiques ;
-5. migration des anciens drones et capteurs.
+- [x] Accès et barrières
+- [x] Capteurs statiques
+- [x] Défenses armées
+- [x] Personnel et entités magiques
+- [x] Migration des anciens drones et capteurs
 
 **Critère de sortie :** les seize éléments demandés sont disponibles, configurables,
 sauvegardables et révélables.
@@ -959,21 +962,21 @@ sauvegardables et révélables.
 
 Durée indicative : 3 à 4 jours.
 
-- [ ] Sous-collection Firestore des pions
-- [ ] Création et configuration MJ
-- [ ] Drag tactile joueur
-- [ ] Synchronisation temps réel
-- [ ] Modèle des transitions
-- [ ] Outil de liaison multi-étages
-- [ ] Escaliers à deux endpoints
-- [ ] Ascenseurs multi-étages
-- [ ] Confirmation tactile de changement d'étage
-- [ ] Détection des salles traversées
-- [ ] Révélation persistante des salles découvertes
-- [ ] Ligne de vue depuis les pions
-- [ ] Découverte automatique des éléments visibles
-- [ ] Réinitialisation MJ des découvertes
-- [ ] Règles Firestore limitées aux coordonnées
+- [x] Sous-collection Firestore des pions
+- [x] Création et configuration MJ
+- [x] Drag tactile joueur
+- [x] Synchronisation temps réel
+- [x] Modèle des transitions
+- [x] Outil de liaison multi-étages
+- [x] Escaliers à deux endpoints
+- [x] Ascenseurs multi-étages
+- [x] Confirmation tactile de changement d'étage
+- [x] Détection des salles traversées
+- [x] Révélation persistante des salles découvertes
+- [x] Ligne de vue depuis les pions
+- [x] Découverte automatique des éléments visibles
+- [x] Réinitialisation MJ des découvertes
+- [x] Règles Firestore limitées aux coordonnées
 
 **Critère de sortie :** un joueur déplace son pion sur la tablette, utilise un
 escalier ou un ascenseur, apparaît au bon point sur l'étage d'arrivée et révèle
@@ -983,13 +986,17 @@ uniquement la salle et les éléments réellement visibles, sans réécrire le p
 
 Durée indicative : 2 à 3 jours.
 
-- [ ] Annuler et rétablir
-- [ ] Duplication
-- [ ] Waypoints éditables
-- [ ] Palette repliable
-- [ ] Tablette paysage
-- [ ] Tablette portrait
-- [ ] Inspecteur joueur en tiroir
+- [x] Annuler et rétablir
+- [x] Duplication
+- [x] Copier/coller entre étages
+- [x] Gestion et restauration des 15 dernières versions
+- [x] Réinitialisation des couvertures
+- [x] Focalisation depuis l'arbre Visibilité
+- [x] Waypoints éditables
+- [x] Palette repliable
+- [x] Tablette paysage
+- [x] Tablette portrait
+- [x] Inspecteur joueur en tiroir
 
 **Critère de sortie :** l'édition reste fluide malgré l'augmentation du catalogue.
 
@@ -997,8 +1004,9 @@ Durée indicative : 2 à 3 jours.
 
 Durée indicative : 2 jours.
 
-- [ ] Tests unitaires
-- [ ] Tests d'intégration
+- [x] Tests unitaires
+- [x] Tests d'intégration
+- [x] Simulation automatisée d'un conflit entre deux clients
 - [ ] Test réel MacBook et tablette
 - [ ] Test de conflit entre deux machines
 - [ ] Migration du plan Firestore
@@ -1013,86 +1021,87 @@ niveau de finition graphique des décors et des nouveaux dispositifs.
 
 ## 15.1 Modèle et migration
 
-- [ ] Migration du schéma actuel vers v2
-- [ ] Champs absents
-- [ ] Valeurs invalides
-- [ ] Préservation des identifiants
-- [ ] Rejet d'un plan irrécupérable
-- [ ] Export puis import sans perte
+- [x] Migration du schéma actuel vers v2
+- [x] Champs absents
+- [x] Valeurs invalides
+- [x] Préservation des identifiants
+- [x] Rejet d'un plan irrécupérable
+- [x] Export puis import sans perte
 
 ## 15.2 Sauvegardes
 
-- [ ] Deux modifications successives rapides
-- [ ] Modification pendant une sauvegarde
-- [ ] Fermeture avant la fin du debounce
-- [ ] Conflit entre deux machines
-- [ ] Coupure puis retour du réseau
-- [ ] Restauration d'une version précédente
+- [x] Deux modifications successives rapides
+- [x] Modification pendant une sauvegarde
+- [x] Fermeture avant la fin du debounce
+- [x] Conflit entre deux machines
+- [x] Coupure puis retour du réseau
+- [x] Restauration d'une version précédente
 
 ## 15.3 Rondes
 
-- [ ] Entité hors ligne réellement immobile
-- [ ] Changement de vitesse sans téléportation
-- [ ] Passage boucle / aller-retour sans saut
-- [ ] Déplacement de waypoint
-- [ ] Suppression de waypoint
+- [x] Entité hors ligne réellement immobile
+- [x] Changement de vitesse sans téléportation
+- [x] Passage boucle / aller-retour sans saut
+- [x] Déplacement de waypoint
+- [x] Suppression de waypoint
 
 ## 15.4 Couvertures et décors
 
-- [ ] Cône optique bloqué par un décor
-- [ ] Infrarouge bloqué par une cloison
-- [ ] Laser arrêté au premier obstacle
-- [ ] Plaque de pression indépendante de la vision
-- [ ] Grille d'acier transparente optiquement
-- [ ] Barrière de mana bloquant uniquement l'astral
-- [ ] Décor non occultant sans effet
+- [x] Cône optique bloqué par un décor
+- [x] Infrarouge bloqué par une cloison
+- [x] Laser arrêté au premier obstacle
+- [x] Plaque de pression indépendante de la vision
+- [x] Grille d'acier transparente optiquement
+- [x] Barrière de mana bloquant uniquement l'astral
+- [x] Décor non occultant sans effet
 
 ## 15.5 Pions et transitions
 
-- [ ] Création, modification et suppression d'un pion par le MJ
-- [ ] Déplacement tactile autorisé
-- [ ] Déplacement refusé quand le pion est verrouillé
+- [x] Création, modification et suppression d'un pion par le MJ
+- [x] Déplacement tactile autorisé
+- [x] Déplacement refusé quand le pion est verrouillé
 - [ ] Synchronisation sur deux écrans
-- [ ] Écriture limitée aux coordonnées
-- [ ] Escalier bidirectionnel
-- [ ] Passage à sens unique
-- [ ] Ascenseur à trois étages
-- [ ] Destination inconnue autorisée
-- [ ] Transition désactivée
-- [ ] Arrivée au bon endpoint
-- [ ] Changement automatique de l'étage affiché
-- [ ] Révélation automatique d'une salle à l'entrée
-- [ ] Révélation de l'étage après une transition vers une zone inconnue
-- [ ] Découverte d'un dispositif en ligne de vue
-- [ ] Élément occulté restant caché
-- [ ] Élément avec **autoDiscover: false** restant caché
-- [ ] Cône et ronde restant indépendants de la découverte
+- [x] Écriture limitée aux coordonnées
+- [x] Escalier bidirectionnel
+- [x] Passage à sens unique
+- [x] Ascenseur à trois étages
+- [x] Destination inconnue autorisée
+- [x] Transition désactivée
+- [x] Arrivée au bon endpoint
+- [x] Changement automatique de l'étage affiché
+- [x] Révélation automatique d'une salle à l'entrée
+- [x] Révélation de l'étage après une transition vers une zone inconnue
+- [x] Découverte d'un dispositif en ligne de vue
+- [x] Élément occulté restant caché
+- [x] Élément avec **autoDiscover: false** restant caché
+- [x] Cône et ronde restant indépendants de la découverte
 - [ ] Découverte synchronisée sur deux écrans
 
 ## 15.6 Catalogue
 
 Pour chaque type :
 
-- [ ] placement ;
-- [ ] sélection ;
-- [ ] changement d'état ;
-- [ ] liaison réseau si applicable ;
-- [ ] ronde si applicable ;
-- [ ] couverture si applicable ;
-- [ ] révélation MJ et joueur ;
-- [ ] sauvegarde et rechargement.
+- [x] placement ;
+- [x] sélection ;
+- [x] changement d'état ;
+- [x] liaison réseau si applicable ;
+- [x] ronde si applicable ;
+- [x] couverture si applicable ;
+- [x] révélation MJ et joueur ;
+- [x] sauvegarde et rechargement.
 
 ## 15.7 Interfaces cibles
 
 - [ ] MacBook 1280 × 800
 - [ ] MacBook 1440 × 900
-- [ ] Tablette 1024 × 768 paysage
-- [ ] Tablette 768 × 1024 portrait
+- [x] Simulation responsive 2304 × 1440 paysage
+- [x] Simulation responsive 1440 × 2304 portrait
+- [ ] Validation sur la tablette physique
 - [ ] Manipulation tactile
 - [ ] Drag tactile des pions
 - [ ] Changement d'étage par endpoint
-- [ ] Absence de débordement horizontal
-- [ ] Inspecteur joueur refermable
+- [x] Absence de débordement horizontal
+- [x] Inspecteur joueur refermable
 
 ---
 
@@ -1156,3 +1165,12 @@ cas particuliers et gardera le projet simple à maintenir.
 | Date | Phase | Travail réalisé | Commit |
 |---|---|---|---|
 | 2026-07-15 | Planification | Feuille de route v2 créée et validée | À renseigner |
+| 2026-07-15 | Phase 0 / Phase 1 | Export Firestore de référence, schéma v2, migration validée et séparation des notes | À renseigner |
+| 2026-07-15 | Phase 1 | File séquentielle, révisions transactionnelles, reprise locale et résolution des conflits | À renseigner |
+| 2026-07-15 | Phase 2 | Catalogue déclaratif, catégories, profils d'état et migration des anciens types | À renseigner |
+| 2026-07-15 | Phase 3 | Moteur de couverture, cinq formes, canaux, inspecteur dynamique et révélation indépendante | À renseigner |
+| 2026-07-15 | Phase 4 | Catalogue de décors, édition géométrique, rendu multicouche, occlusion par canal et cache | À renseigner |
+| 2026-07-15 | Phase 5 | Seize dispositifs configurés, couvertures spécialisées et cycles de vie testés | À renseigner |
+| 2026-07-15 | Phase 6 | Pions PJ, transitions multi-étages, exploration et découvertes persistantes | À renseigner |
+| 2026-07-15 | Phase 7 | Historique, duplication, waypoints éditables et interfaces tablette | À renseigner |
+| 2026-07-15 | Phase 8 | Tests unitaires/intégration, snapshot et workflows CI/déploiement manuel préparés | À renseigner |

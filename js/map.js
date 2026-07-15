@@ -1,31 +1,21 @@
 /* ============================================================
    map.js — Rendu de la carte : grille logique mise à l'échelle,
    pièces (cases peintes + contours calculés), entités, overlay
-   SVG (cônes de vision, chemins de ronde, câbles réseau).
-   Catalogue des dispositifs (trivial à enrichir) :
-     mobile: true    → peut recevoir un chemin de ronde
-     hasVision: true → peut recevoir un cône de vision
+   SVG (couvertures, chemins de ronde, câbles réseau).
+   Le catalogue déclaratif et ses capacités vivent dans catalog.js.
    ============================================================ */
 
 const MapView = (() => {
 
-    /* --- Catalogue des dispositifs de sécurité --- */
-    const catalog = {
-        network_node: { label: 'NET', color: '#ffb300', name: 'Nœud Réseau' },
-        camera:       { label: 'CAM', color: '#ff2a2a', name: 'Caméra Optique', hasVision: true },
-        turret:       { label: 'TRT', color: '#ff5722', name: 'Tourelle Sécu' },
-        barrier:      { label: 'BAR', color: '#bd00ff', name: 'Barrière Mana' },
-        maglock:      { label: 'MAG', color: '#00d2ff', name: 'Porte Magsec' },
-        guard:        { label: 'GRD', color: '#4af626', name: 'Garde / Patrouille', mobile: true },
-        drone:        { label: 'DRN', color: '#ff2a9d', name: 'Drone', mobile: true },
-        sensor:       { label: 'SNS', color: '#9dff00', name: 'Capteur' },
-        elevator:     { label: 'ELV', color: '#8899ff', name: 'Ascenseur' }
-    };
+    const catalog = EntityCatalog.types;
 
     const HACKED_COLOR = '#4af626';
 
     let cellPx = 30;  // taille d'une case logique à l'écran, recalculée à chaque rendu
     let walls = [];   // segments de murs de l'étage courant (coordonnées grille)
+    const occluderCache = new Map();
+    let occluderBuilds = 0;
+    const ROOM_OCCLUSION_CHANNELS = new Set(['optical', 'infrared', 'laser']);
 
     const board = () => document.getElementById('board');
     const svgGroup = id => document.getElementById(id);
@@ -66,7 +56,7 @@ const MapView = (() => {
     /* ============================================================
        Murs : les arêtes extérieures des pièces (mêmes arêtes que
        les contours rendus) servent de segments opaques pour la
-       vision. Runs colinéaires fusionnés, dédoublonnés entre
+       couverture. Runs colinéaires fusionnés, dédoublonnés entre
        pièces adjacentes.
        ============================================================ */
     function computeWalls(floorId) {
@@ -142,6 +132,105 @@ const MapView = (() => {
         return pts;
     }
 
+    function clippedRayLength(cx, cy, dirDeg, range, wallSegs) {
+        const a = dirDeg * Math.PI / 180;
+        const dx = Math.cos(a), dy = Math.sin(a);
+        let length = range;
+        for (const wall of wallSegs) {
+            const hit = raySegment(cx, cy, dx, dy, wall);
+            if (hit !== null && hit < length) length = hit;
+        }
+        return length;
+    }
+
+    function orientedRectangle(cx, cy, dirDeg, length, width, centered) {
+        const a = dirDeg * Math.PI / 180;
+        const dx = Math.cos(a), dy = Math.sin(a);
+        const px = -dy, py = dx;
+        const start = centered ? -length / 2 : 0;
+        const end = centered ? length / 2 : length;
+        const halfWidth = width / 2;
+        return [
+            [cx + dx * start + px * halfWidth, cy + dy * start + py * halfWidth],
+            [cx + dx * end + px * halfWidth, cy + dy * end + py * halfWidth],
+            [cx + dx * end - px * halfWidth, cy + dy * end - py * halfWidth],
+            [cx + dx * start - px * halfWidth, cy + dy * start - py * halfWidth]
+        ];
+    }
+
+    function beamPolygon(cx, cy, dirDeg, range, width, wallSegs) {
+        return orientedRectangle(cx, cy, dirDeg,
+            clippedRayLength(cx, cy, dirDeg, range, wallSegs), width, false);
+    }
+
+    function rectanglePolygon(cx, cy, dirDeg, range, width) {
+        return orientedRectangle(cx, cy, dirDeg, range, width, false);
+    }
+
+    function thresholdPolygon(cx, cy, dirDeg, depth, width) {
+        return orientedRectangle(cx, cy, dirDeg, depth, width, true);
+    }
+
+    function polygonSegments(points) {
+        return points.map((point, index) => {
+            const next = points[(index + 1) % points.length];
+            return { x1: point[0], y1: point[1], x2: next[0], y2: next[1] };
+        });
+    }
+
+    function occluderSignature(floorId, channel) {
+        const rooms = ROOM_OCCLUSION_CHANNELS.has(channel)
+            ? Store.floorRooms(floorId).map(room => [room.id, room.cells]) : [];
+        const decors = Store.floorDecors(floorId)
+            .filter(decor => decor.blocksVision.includes(channel))
+            .map(decor => [decor.id, decor.x, decor.y, decor.width, decor.height, decor.rotation]);
+        const entities = Store.floorEntities(floorId)
+            .filter(ent => Store.getEffectiveState(ent) !== 'offline'
+                && EntityCatalog.get(ent.type).blocksVision.includes(channel))
+            .map(ent => [ent.id, ent.x, ent.y, ent.state]);
+        return JSON.stringify([rooms, decors, entities]);
+    }
+
+    function computeOccluders(floorId, channel) {
+        const key = floorId + ':' + channel;
+        const signature = occluderSignature(floorId, channel);
+        const cached = occluderCache.get(key);
+        if (cached && cached.signature === signature) return cached.segments;
+
+        const segments = ROOM_OCCLUSION_CHANNELS.has(channel) ? computeWalls(floorId) : [];
+        Store.floorDecors(floorId).forEach(decor => {
+            if (!decor.blocksVision.includes(channel)) return;
+            const points = orientedRectangle(decor.x, decor.y, decor.rotation,
+                decor.width, decor.height, true);
+            segments.push(...polygonSegments(points));
+        });
+        Store.floorEntities(floorId).forEach(ent => {
+            if (Store.getEffectiveState(ent) === 'offline'
+                || !EntityCatalog.get(ent.type).blocksVision.includes(channel)) return;
+            segments.push(...polygonSegments(orientedRectangle(ent.x, ent.y, 0, 1, 1, true)));
+        });
+
+        occluderBuilds += 1;
+        occluderCache.set(key, { signature, segments });
+        return segments;
+    }
+
+    function invalidateOccluders() {
+        occluderCache.clear();
+    }
+
+    function isLineBlocked(floorId, from, to, channel, targetMargin) {
+        const distance = Math.hypot(to.x - from.x, to.y - from.y);
+        if (distance < 1e-6) return false;
+        const dx = (to.x - from.x) / distance;
+        const dy = (to.y - from.y) / distance;
+        const limit = Math.max(0, distance - (targetMargin == null ? 0.35 : targetMargin));
+        return computeOccluders(floorId, channel || 'optical').some(segment => {
+            const hit = raySegment(from.x, from.y, dx, dy, segment);
+            return hit !== null && hit < limit;
+        });
+    }
+
     /* --- Rendu des pièces : cases peintes, bordure sur les arêtes extérieures --- */
     function renderRooms() {
         const layer = document.getElementById('rooms-layer');
@@ -152,7 +241,7 @@ const MapView = (() => {
 
         Store.visibleRooms(floor.id).forEach(room => {
             const isSelected = sel && sel.kind === 'room' && sel.id === room.id;
-            const hidden = !room.revealed; // vue MJ uniquement (filtré en vue joueur)
+            const hidden = !Store.isEffectivelyRevealed(room, 'room');
             const cellSet = new Set(room.cells);
             const fill = `hsla(${room.hue}, 90%, 60%, ${isSelected ? 0.22 : hidden ? 0.04 : 0.09})`;
             const edge = `2px ${hidden ? 'dashed' : 'solid'} hsla(${room.hue}, 90%, 60%, ${isSelected ? 1 : hidden ? 0.4 : 0.65})`;
@@ -164,6 +253,7 @@ const MapView = (() => {
 
                 const div = document.createElement('div');
                 div.className = 'room-cell';
+                div.dataset.roomId = room.id;
                 div.style.left = (c * cellPx) + 'px';
                 div.style.top = (r * cellPx) + 'px';
                 div.style.width = cellPx + 'px';
@@ -180,12 +270,116 @@ const MapView = (() => {
             if (room.cells.length > 0) {
                 const label = document.createElement('div');
                 label.className = 'room-label' + (hidden ? ' unrevealed' : '');
+                label.dataset.roomId = room.id;
                 label.textContent = room.name;
                 label.style.left = (labelCol * cellPx + 5) + 'px';
                 label.style.top = (labelRow * cellPx + 4) + 'px';
                 label.style.color = `hsla(${room.hue}, 70%, 72%, 0.9)`;
                 layer.appendChild(label);
             }
+        });
+    }
+
+    /* --- Rendu des décors, séparé entre sol et obstacles --- */
+    function renderDecors() {
+        const floorLayer = document.getElementById('decors-floor-layer');
+        const obstacleLayer = document.getElementById('decors-layer');
+        if (!floorLayer || !obstacleLayer) return;
+        floorLayer.innerHTML = '';
+        obstacleLayer.innerHTML = '';
+        const floor = Store.currentFloor();
+        if (!floor) return;
+        const passThrough = Store.ui.activeTool !== 'select';
+        floorLayer.classList.toggle('pass-through', passThrough);
+        obstacleLayer.classList.toggle('pass-through', passThrough);
+        const selection = Store.ui.selection;
+
+        Store.visibleDecors(floor.id).forEach(decor => {
+            const definition = DecorCatalog.get(decor.type);
+            const div = document.createElement('div');
+            div.className = 'decor'
+                + (definition.layer === 'floor' ? ' floor-decor' : '')
+                + (decor.blocksVision.length ? ' blocks-vision' : '')
+                + (Store.isEffectivelyRevealed(decor, 'decor') ? '' : ' unrevealed');
+            if (selection && selection.kind === 'decor' && selection.id === decor.id) {
+                div.classList.add('selected');
+            }
+            div.dataset.id = decor.id;
+            div.style.left = (decor.x * cellPx) + 'px';
+            div.style.top = (decor.y * cellPx) + 'px';
+            div.style.width = (decor.width * cellPx) + 'px';
+            div.style.height = (decor.height * cellPx) + 'px';
+            div.style.color = definition.color;
+            div.style.setProperty('--decor-rotation', decor.rotation + 'deg');
+            div.title = decor.name;
+            const label = document.createElement('span');
+            label.className = 'decor-label';
+            label.textContent = definition.label;
+            div.appendChild(label);
+            div.addEventListener('pointerdown', event => {
+                event.stopPropagation();
+                Editor.onDecorPointerDown(event, decor.id);
+            });
+            (definition.layer === 'floor' ? floorLayer : obstacleLayer).appendChild(div);
+        });
+    }
+
+    function renderTransitions() {
+        const layer = document.getElementById('transitions-layer');
+        if (!layer) return;
+        layer.innerHTML = '';
+        const floor = Store.currentFloor();
+        if (!floor) return;
+        layer.classList.toggle('pass-through', Store.ui.activeTool !== 'select');
+        const labels = { stairs: 'ESC', elevator: 'ELV', ladder: 'ECH', hatch: 'TRP', passage: 'PAS' };
+        Store.visibleTransitions(floor.id).forEach(transition => {
+            transition.endpoints.filter(endpoint => endpoint.floorId === floor.id).forEach(endpoint => {
+                const div = document.createElement('div');
+                div.className = 'transition-endpoint state-' + transition.state
+                    + (Store.ui.selection && Store.ui.selection.kind === 'transition'
+                        && Store.ui.selection.id === transition.id ? ' selected' : '')
+                    + (Store.isEffectivelyRevealed(transition, 'transition') ? '' : ' unrevealed');
+                div.dataset.transitionId = transition.id;
+                div.dataset.endpointId = endpoint.id;
+                div.style.left = (endpoint.x * cellPx) + 'px';
+                div.style.top = (endpoint.y * cellPx) + 'px';
+                div.dataset.symbol = labels[transition.type] || 'TR';
+                div.title = transition.name + (endpoint.label ? ' — ' + endpoint.label : '');
+                div.addEventListener('pointerdown', event => {
+                    event.stopPropagation();
+                    Editor.onTransitionPointerDown(event, transition.id, endpoint.id);
+                });
+                layer.appendChild(div);
+            });
+        });
+    }
+
+    function renderTokens() {
+        const layer = document.getElementById('tokens-layer');
+        if (!layer) return;
+        layer.innerHTML = '';
+        layer.classList.toggle('pass-through', Store.ui.activeTool !== 'select');
+        const floor = Store.currentFloor();
+        if (!floor) return;
+        Store.visibleTokens(floor.id).forEach(token => {
+            const div = document.createElement('div');
+            div.className = 'runner-token'
+                + (token.locked ? ' locked' : '')
+                + (token.visible ? '' : ' unrevealed')
+                + (Store.ui.selection && Store.ui.selection.kind === 'token'
+                    && Store.ui.selection.id === token.id ? ' selected' : '');
+            div.dataset.id = token.id;
+            div.style.left = (token.x * cellPx) + 'px';
+            div.style.top = (token.y * cellPx) + 'px';
+            div.style.color = token.color;
+            div.style.borderColor = token.color;
+            div.textContent = token.shortLabel;
+            div.title = token.name;
+            div.addEventListener('pointerdown', event => {
+                event.stopPropagation();
+                Editor.onTokenPointerDown(event, token.id);
+            });
+            layer.appendChild(div);
         });
     }
 
@@ -202,11 +396,11 @@ const MapView = (() => {
         layer.classList.toggle('pass-through', Store.ui.activeTool !== 'select');
 
         Store.visibleEntities(floor.id).forEach(ent => {
-            const def = catalog[ent.type] || { label: '???', color: '#888' };
+            const def = EntityCatalog.get(ent.type);
             const pos = Anim.effectivePos(ent, now);
             const div = document.createElement('div');
             div.className = 'entity state-' + Store.getEffectiveState(ent)
-                + (ent.revealed ? '' : ' unrevealed');
+                + (Store.isEffectivelyRevealed(ent, 'entity') ? '' : ' unrevealed');
             div.dataset.id = ent.id;
             div.style.left = (pos.x * cellPx) + 'px';
             div.style.top = (pos.y * cellPx) + 'px';
@@ -227,55 +421,81 @@ const MapView = (() => {
         renderOverlay();
     }
 
-    /* --- Overlay SVG : cônes (fond), rondes, câbles (dessus) --- */
+    /* --- Overlay SVG : couvertures (fond), rondes, câbles (dessus) --- */
     function renderOverlay() {
         const svg = document.getElementById('overlay-svg');
         svg.innerHTML = '';
-        ['g-cones', 'g-patrols', 'g-cables'].forEach(id => {
+        ['g-coverages', 'g-patrols', 'g-cables'].forEach(id => {
             const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             g.id = id;
             svg.appendChild(g);
         });
         const now = Date.now();
-        renderCones(now);
+        renderCoverages(now);
         renderPatrols();
         renderCables(now);
     }
 
-    /* Cônes de vision, découpés par les murs. offline = pas de cône, hacked = vert. */
-    function renderCones(now) {
-        const g = svgGroup('g-cones');
+    /* Couvertures génériques. Les cônes et faisceaux sont découpés par les murs. */
+    function renderCoverages(now) {
+        const g = svgGroup('g-coverages');
         if (!g) return;
         g.innerHTML = '';
         const floor = Store.currentFloor();
         if (!floor) return;
 
         Store.visibleEntities(floor.id).forEach(ent => {
-            if (!ent.vision) return;
-            // Vue joueur : le cône a son propre flag, indépendant de l'entité
-            if (Store.isPlayerView() && !ent.vision.revealed) return;
+            if (!ent.coverage) return;
+            // Vue joueur : la couverture a son propre flag, indépendant de l'entité
+            if (Store.isPlayerView() && !ent.coverage.revealed) return;
             const effState = Store.getEffectiveState(ent);
             if (effState === 'offline') return;
-            const def = catalog[ent.type] || { color: '#888' };
+            const def = EntityCatalog.get(ent.type);
             const color = effState === 'hacked' ? HACKED_COLOR : def.color;
-            // Vue MJ : cône encore caché aux joueurs → tracé en pointillés atténués
-            const hidden = !Store.isPlayerView() && !(ent.revealed && ent.vision.revealed);
+            // Vue MJ : couverture encore cachée aux joueurs → tracé atténué
+            const hidden = !Store.isPlayerView() && !(ent.revealed && ent.coverage.revealed);
 
             const pos = Anim.effectivePos(ent, now);
-            const dir = Anim.sweepDirection(ent.vision, now);
-            const pts = conePolygon(pos.x, pos.y, dir, ent.vision.angle, ent.vision.range, walls);
-
-            const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-            poly.setAttribute('points', pts.map(p => (p[0] * cellPx) + ',' + (p[1] * cellPx)).join(' '));
-            poly.setAttribute('fill', color);
-            poly.setAttribute('fill-opacity', hidden ? '0.05' : effState === 'hacked' ? '0.14' : '0.10');
-            poly.setAttribute('stroke', color);
-            poly.setAttribute('stroke-opacity', hidden ? '0.25' : '0.45');
-            poly.setAttribute('stroke-width', '1');
-            if (hidden) poly.setAttribute('stroke-dasharray', '4 4');
-            g.appendChild(poly);
+            const coverage = ent.coverage;
+            const dir = Anim.sweepDirection(coverage, now);
+            const occluders = computeOccluders(floor.id, coverage.channel);
+            let shape;
+            if (coverage.shape === 'circle' && occluders.length === 0) {
+                shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                shape.setAttribute('cx', pos.x * cellPx);
+                shape.setAttribute('cy', pos.y * cellPx);
+                shape.setAttribute('r', coverage.radius * cellPx);
+            } else {
+                let points;
+                if (coverage.shape === 'beam') {
+                    points = beamPolygon(pos.x, pos.y, dir, coverage.range, coverage.width, occluders);
+                } else if (coverage.shape === 'rectangle') {
+                    points = rectanglePolygon(pos.x, pos.y, dir, coverage.range, coverage.width);
+                } else if (coverage.shape === 'threshold') {
+                    points = thresholdPolygon(pos.x, pos.y, dir, coverage.range, coverage.width);
+                } else if (coverage.shape === 'circle') {
+                    points = conePolygon(pos.x, pos.y, 0, 360, coverage.radius, occluders);
+                } else {
+                    points = conePolygon(pos.x, pos.y, dir, coverage.angle, coverage.range, occluders);
+                }
+                shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                shape.setAttribute('points', points.map(point =>
+                    (point[0] * cellPx) + ',' + (point[1] * cellPx)).join(' '));
+            }
+            shape.dataset.entityId = ent.id;
+            shape.dataset.shape = coverage.shape;
+            shape.dataset.channel = coverage.channel;
+            shape.setAttribute('fill', color);
+            shape.setAttribute('fill-opacity', hidden ? '0.05' : effState === 'hacked' ? '0.14' : '0.10');
+            shape.setAttribute('stroke', color);
+            shape.setAttribute('stroke-opacity', hidden ? '0.25' : '0.45');
+            shape.setAttribute('stroke-width', coverage.shape === 'beam' ? '1.5' : '1');
+            if (hidden) shape.setAttribute('stroke-dasharray', '4 4');
+            g.appendChild(shape);
         });
     }
+
+    const renderCones = renderCoverages;
 
     /* Chemins de ronde : polyligne pointillée + waypoints */
     function renderPatrols() {
@@ -290,7 +510,7 @@ const MapView = (() => {
             if (!ent.patrol || ent.patrol.points.length === 0) return;
             // Vue joueur : la ronde a son propre flag, indépendant de l'entité
             if (Store.isPlayerView() && !ent.patrol.revealed) return;
-            const def = catalog[ent.type] || { color: '#888' };
+            const def = EntityCatalog.get(ent.type);
             const isSelected = sel && sel.kind === 'entity' && sel.id === ent.id;
             // Vue MJ : ronde encore cachée aux joueurs → atténuée
             const hidden = !Store.isPlayerView() && !(ent.revealed && ent.patrol.revealed);
@@ -313,9 +533,18 @@ const MapView = (() => {
                 const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
                 dot.setAttribute('cx', p.x * cellPx);
                 dot.setAttribute('cy', p.y * cellPx);
-                dot.setAttribute('r', i === 0 ? 4 : 2.5);
+                dot.setAttribute('r', isSelected && !Store.isPlayerView() ? 7 : (i === 0 ? 4 : 2.5));
                 dot.setAttribute('fill', def.color);
                 dot.setAttribute('fill-opacity', opacity);
+                dot.dataset.entityId = ent.id;
+                dot.dataset.waypointIndex = i;
+                if (isSelected && !Store.isPlayerView()) {
+                    dot.classList.add('patrol-waypoint');
+                    dot.setAttribute('stroke', '#ffffff');
+                    dot.setAttribute('stroke-width', '1.5');
+                    dot.addEventListener('pointerdown', event =>
+                        Editor.onWaypointPointerDown(event, ent.id, i));
+                }
                 g.appendChild(dot);
             });
         });
@@ -369,7 +598,7 @@ const MapView = (() => {
         }
     }
 
-    /* Déplacement pendant un drag : position + câbles + cônes suivent */
+    /* Déplacement pendant un drag : position + câbles + couvertures suivent */
     function moveEntityDiv(entityId, x, y) {
         const div = document.querySelector(`.entity[data-id="${entityId}"]`);
         if (div) {
@@ -378,27 +607,90 @@ const MapView = (() => {
             div.classList.add('dragging');
         }
         renderCables();
-        renderCones(Date.now());
+        renderCoverages(Date.now());
+    }
+
+    function moveDecorDiv(decorId, x, y) {
+        const div = document.querySelector(`.decor[data-id="${decorId}"]`);
+        if (div) {
+            div.style.left = (x * cellPx) + 'px';
+            div.style.top = (y * cellPx) + 'px';
+            div.classList.add('dragging');
+        }
+        renderCoverages(Date.now());
+    }
+
+    function moveTokenDiv(tokenId, x, y) {
+        const div = document.querySelector(`.runner-token[data-id="${tokenId}"]`);
+        if (div) {
+            div.style.left = (x * cellPx) + 'px';
+            div.style.top = (y * cellPx) + 'px';
+            div.classList.add('dragging');
+        }
+    }
+
+    function moveTransitionEndpointDiv(transitionId, endpointId, x, y) {
+        const div = document.querySelector(`.transition-endpoint[data-transition-id="${transitionId}"][data-endpoint-id="${endpointId}"]`);
+        if (div) {
+            div.style.left = (x * cellPx) + 'px';
+            div.style.top = (y * cellPx) + 'px';
+            div.classList.add('dragging');
+        }
     }
 
     function render() {
         layoutBoard();
         renderRooms();
+        renderDecors();
+        renderTransitions();
         const floor = Store.currentFloor();
-        walls = floor ? computeWalls(floor.id) : [];
+        walls = floor ? computeOccluders(floor.id, 'optical') : [];
         renderEntities(); // appelle renderOverlay()
+        renderTokens();
         const wrapper = document.getElementById('map-wrapper');
         const tool = Store.ui.activeTool;
         wrapper.className = 'map-wrapper'
             + (tool === 'paint' ? ' tool-paint' : '')
             + (tool === 'erase' ? ' tool-erase' : '')
             + (tool === 'patrol' ? ' tool-patrol' : '')
-            + (catalog[tool] ? ' tool-place' : '');
+            + (tool === 'token' ? ' tool-token' : '')
+            + (tool.startsWith('transition:') ? ' tool-transition' : '')
+            + (EntityCatalog.types[tool] ? ' tool-place' : '')
+            + (tool.startsWith('decor:') ? ' tool-decor' : '');
+    }
+
+    function focusElement(kind, id) {
+        let candidates = [];
+        let dataProperty = 'id';
+        if (kind === 'entity') candidates = document.querySelectorAll('.entity[data-id]');
+        else if (kind === 'decor') candidates = document.querySelectorAll('.decor[data-id]');
+        else if (kind === 'token') candidates = document.querySelectorAll('.runner-token[data-id]');
+        else if (kind === 'transition') {
+            candidates = document.querySelectorAll('.transition-endpoint[data-transition-id]');
+            dataProperty = 'transitionId';
+        } else if (kind === 'room') {
+            candidates = document.querySelectorAll('.room-label[data-room-id]');
+            dataProperty = 'roomId';
+        }
+        const target = kind === 'floor' ? board()
+            : [...candidates].find(element => element.dataset[dataProperty] === id);
+        if (!target) return false;
+        target.classList.remove('map-focus-pulse');
+        void target.offsetWidth;
+        target.classList.add('map-focus-pulse');
+        setTimeout(() => target.classList.remove('map-focus-pulse'), 1200);
+        return true;
     }
 
     return {
-        catalog, render, renderEntities, renderOverlay, renderCones, renderPatrols, renderCables,
-        gridPosFromEvent, cellFromEvent, moveEntityDiv, setEntityScreenPos,
-        conePolygon, getWalls: () => walls
+        catalog, render, renderDecors, renderTransitions, renderTokens,
+        renderEntities, renderOverlay, renderCoverages, renderCones, renderPatrols, renderCables,
+        gridPosFromEvent, cellFromEvent, moveEntityDiv, moveDecorDiv, moveTokenDiv,
+        moveTransitionEndpointDiv, setEntityScreenPos,
+        conePolygon, beamPolygon, rectanglePolygon, thresholdPolygon,
+        computeOccluders, invalidateOccluders, isLineBlocked,
+        focusElement,
+        getOccluderCacheStats: () => ({ entries: occluderCache.size, builds: occluderBuilds }),
+        getWalls: () => walls
     };
 })();

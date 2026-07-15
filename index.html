@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shadowrun Bank Planner :: Overlord_View</title>
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body>
 
@@ -14,11 +14,56 @@
         <div class="header-right">
             <span id="save-status"></span>
             <div id="status-ticker">SYSTEM_BOOT…</div>
+            <div class="history-controls" aria-label="Historique d'édition">
+                <button id="undo-btn" disabled title="Rien à annuler">↶ Annuler</button>
+                <button id="redo-btn" disabled title="Rien à rétablir">↷ Rétablir</button>
+            </div>
+            <button id="snapshot-btn" title="Gérer les versions de restauration">⛨ Versions</button>
+            <button id="export-btn">⇩ Export JSON</button>
+            <button id="import-btn">⇧ Import JSON</button>
+            <input id="import-file" type="file" accept="application/json,.json" hidden>
+            <button id="retry-cloud-btn" hidden>↻ Reconnecter</button>
             <button id="preview-btn" style="display:none;">👁 Vue joueurs</button>
             <span id="auth-user"></span>
             <button id="auth-btn" style="display:none;">🔑 Admin</button>
         </div>
     </header>
+
+    <div id="conflict-panel" class="conflict-panel" hidden>
+        <div>
+            <strong>Conflit de sauvegarde</strong>
+            <span>Le plan a changé sur une autre machine. Choisis la version à conserver.</span>
+        </div>
+        <div class="conflict-actions">
+            <button id="conflict-use-remote" class="btn-secondary">Charger la version distante</button>
+            <button id="conflict-export-local" class="btn-secondary">Exporter ma version</button>
+            <button id="conflict-force-local" class="btn-danger">Forcer ma version locale</button>
+        </div>
+    </div>
+
+    <div id="snapshot-panel" class="snapshot-panel" hidden>
+        <div class="snapshot-panel-head">
+            <div>
+                <strong>Versions du plan</strong>
+                <span>Les 15 versions les plus récentes sont conservées.</span>
+            </div>
+            <div class="snapshot-actions">
+                <button id="snapshot-create">＋ Créer une version</button>
+                <button id="snapshot-refresh" class="btn-secondary">↻ Actualiser</button>
+                <button id="snapshot-close" class="btn-secondary">Fermer</button>
+            </div>
+        </div>
+        <div class="snapshot-columns">
+            <section>
+                <h2>Sur cet appareil</h2>
+                <div id="snapshot-local-list" class="snapshot-list"></div>
+            </section>
+            <section>
+                <h2>Cloud Firestore</h2>
+                <div id="snapshot-cloud-list" class="snapshot-list"></div>
+            </section>
+        </div>
+    </div>
 
     <div class="app-container">
         <!-- Palette d'outils (générée par editor.js) + arbre de visibilité (visibility.js) -->
@@ -33,6 +78,8 @@
                 <div id="tools-structure" style="display:flex; flex-direction:column; gap:10px;"></div>
                 <div class="panel-title" style="margin-top:10px;">Dispositifs</div>
                 <div id="tools-entities" style="display:flex; flex-direction:column; gap:10px;"></div>
+                <div class="panel-title" style="margin-top:10px;">Décors</div>
+                <div id="tools-decors" style="display:flex; flex-direction:column; gap:10px;"></div>
             </div>
 
             <div id="tab-visibility" class="panel-tab-content" style="display:none;">
@@ -40,6 +87,8 @@
                 <div class="vis-actions">
                     <button class="btn-secondary" id="vis-reveal-all">👁 Tout révéler</button>
                     <button class="btn-secondary" id="vis-hide-all">🚫 Tout cacher</button>
+                    <button class="btn-secondary" id="vis-reset-floor">↺ Découvertes étage</button>
+                    <button class="btn-secondary" id="vis-reset-all">↺ Toutes découvertes</button>
                 </div>
                 <div id="visibility-tree"></div>
             </div>
@@ -51,28 +100,38 @@
             <div class="map-wrapper" id="map-wrapper">
                 <div id="board">
                     <div id="rooms-layer"></div>
+                    <div id="decors-floor-layer"></div>
+                    <div id="decors-layer"></div>
                     <svg id="overlay-svg"></svg>
                     <div id="entities-layer"></div>
+                    <div id="transitions-layer"></div>
+                    <div id="tokens-layer"></div>
                 </div>
             </div>
         </div>
 
         <!-- Inspecteur (contenu généré par inspector.js) -->
         <div class="panel" id="inspector-panel">
-            <div class="panel-title">Inspecteur</div>
+            <div class="panel-title inspector-title">
+                <span>Inspecteur</span>
+                <button id="inspector-close" type="button" aria-label="Fermer l'inspecteur">×</button>
+            </div>
             <div id="inspector-body"></div>
         </div>
+        <button id="player-inspector-toggle" type="button" aria-label="Ouvrir l'inspecteur">ⓘ Infos</button>
     </div>
 
-    <script src="js/store.js"></script>
-    <script src="js/anim.js"></script>
-    <script src="js/map.js"></script>
-    <script src="js/inspector.js"></script>
-    <script src="js/editor.js"></script>
-    <script src="js/visibility.js"></script>
-    <script src="js/main.js"></script>
+    <script src="js/catalog.js?v=11"></script>
+    <script src="js/store.js?v=11"></script>
+    <script src="js/anim.js?v=11"></script>
+    <script src="js/map.js?v=11"></script>
+    <script src="js/exploration.js?v=11"></script>
+    <script src="js/inspector.js?v=11"></script>
+    <script src="js/editor.js?v=11"></script>
+    <script src="js/visibility.js?v=11"></script>
+    <script src="js/main.js?v=11"></script>
     <!-- Firebase (phase 3) : module ES ; en cas d'échec de chargement
          (file://, hors-ligne), l'appli reste en mode localStorage. -->
-    <script type="module" src="js/cloud.js"></script>
+    <script type="module" src="js/cloud.js?v=11"></script>
 </body>
 </html>
