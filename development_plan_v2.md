@@ -768,10 +768,46 @@ Travaux :
 - [x] Agrandir les zones tactiles à environ 40–44 px
 - [x] Simplifier le header en mode joueur
 - [x] Vérifier l'absence de débordement horizontal
-- [ ] Tester les changements d'étage au toucher
-- [ ] Tester le déplacement tactile des pions
-- [ ] Tester la confirmation des transitions
-- [ ] Ne pas développer de mise en page spécifique au smartphone
+- [x] Tester les changements d'étage au toucher dans Chromium avec émulation tactile
+- [x] Tester le déplacement tactile des pions, verrouillé puis autorisé
+- [x] Tester la confirmation des transitions au toucher
+- [x] Ne pas développer de mise en page spécifique au smartphone
+
+## 12.3 Finition responsive ordinateur + tablette
+
+Objectif : conserver une interface confortable dans les deux modes, sans supposer une
+résolution native précise. Les seuils CSS doivent être pilotés par la largeur logique du
+viewport et vérifiés avec plusieurs densités de pixels.
+
+Comportements attendus :
+
+- grand écran MJ : palette, carte et inspecteur restent visibles en trois colonnes ;
+- ordinateur compact : la carte garde la priorité et les panneaux latéraux peuvent se réduire
+  ou devenir repliables sans masquer les commandes essentielles ;
+- tablette paysage : outils et inspecteur utilisent des tiroirs ou panneaux temporaires ;
+- tablette portrait : la carte occupe la largeur, les commandes secondaires passent sous forme
+  de tiroirs inférieurs ou de menus compacts ;
+- mode joueur : navigation d'étage, carte, pion et informations découvertes restent accessibles
+  au doigt avec des cibles d'au moins 44 px ;
+- les panneaux Versions, Conflit et authentification ne provoquent aucun débordement horizontal ;
+- les hauteurs utilisent le viewport réellement disponible, y compris avec les barres du navigateur.
+
+Travaux :
+
+- [x] Définir les breakpoints communs ordinateur large, ordinateur compact, tablette paysage et portrait
+- [x] Rendre le header compact, repliable et sans chevauchement dans les deux modes
+- [x] Transformer les panneaux MJ en colonnes réductibles puis en tiroirs selon l'espace disponible
+- [x] Préserver une zone de carte suffisamment grande et stable lors de l'ouverture d'un tiroir
+- [x] Adapter Versions, Conflit, formulaires et actions longues aux petites largeurs
+- [x] Uniformiser les cibles tactiles, espacements, tailles de texte et zones de défilement
+- [x] Prendre en charge `dvh` et les zones sûres de la tablette lorsque le navigateur les expose
+- [x] Vérifier clavier/souris et interactions de tiroir par tests automatisés
+- [x] Tester les gestes tactiles automatisés sur pion et transition
+- [ ] Confirmer les gestes tactiles sur la tablette physique
+- [x] Conserver explicitement les smartphones hors périmètre de finition
+
+**Critère de sortie :** aucune commande essentielle ne se chevauche ou ne sort de l'écran,
+la carte reste exploitable, et les scénarios MJ/joueur passent sur tous les viewports cibles.
 
 ---
 
@@ -867,6 +903,10 @@ Travaux :
 - [x] Mise en page tablette portrait
 - [x] Tiroir de l'inspecteur joueur
 - [x] Cibles tactiles des pions et transitions
+- [x] Breakpoints responsive communs aux modes MJ et joueur
+- [x] Panneaux MJ réductibles et tiroirs tablette
+- [x] Header adaptatif et panneaux système sans débordement
+- [x] Gestion de la hauteur dynamique du viewport et des zones sûres
 
 ---
 
@@ -1000,6 +1040,24 @@ Durée indicative : 2 à 3 jours.
 
 **Critère de sortie :** l'édition reste fluide malgré l'augmentation du catalogue.
 
+## Phase 7.5 — Finition responsive ordinateur + tablette
+
+Durée indicative : 1 à 2 jours.
+
+- [x] Inventaire des largeurs minimales de chaque panneau et commande
+- [x] Breakpoints fondés sur le viewport logique
+- [x] Header compact et commandes secondaires regroupées
+- [x] Panneaux MJ réductibles sur ordinateur compact
+- [x] Tiroirs outils/inspecteur sur tablette paysage et portrait
+- [x] Adaptation des panneaux Versions et Conflit
+- [x] Tests automatisés souris et clavier aux dimensions cibles
+- [x] Tests automatisés de gestes tactiles avec verrouillage, drag et changement d'étage
+- [ ] Validation tactile sur la tablette physique
+- [x] Contrôle visuel des deux modes sans débordement ni chevauchement
+
+**Critère de sortie :** l'application est soignée sur ordinateur et tablette dans les deux
+orientations, sans réécriture de l'interface et sans ajouter le smartphone au périmètre.
+
 ## Phase 8 — Tests et déploiement
 
 Durée indicative : 2 jours.
@@ -1012,7 +1070,7 @@ Durée indicative : 2 jours.
 - [ ] Migration du plan Firestore
 - [ ] Déploiement progressif
 
-Ordre de grandeur total : **14 à 22 jours de développement concentré**, selon le
+Ordre de grandeur total : **15 à 24 jours de développement concentré**, selon le
 niveau de finition graphique des décors et des nouveaux dispositifs.
 
 ---
@@ -1092,14 +1150,21 @@ Pour chaque type :
 
 ## 15.7 Interfaces cibles
 
-- [ ] MacBook 1280 × 800
-- [ ] MacBook 1440 × 900
+- [x] MacBook 1280 × 800
+- [x] MacBook 1440 × 900
+- [x] Ordinateur compact 1024 × 768 en modes MJ et joueur
+- [x] Tablette logique 1024 × 768 en paysage
+- [x] Tablette logique 768 × 1024 en portrait
 - [x] Simulation responsive 2304 × 1440 paysage
 - [x] Simulation responsive 1440 × 2304 portrait
+- [x] Header sans chevauchement à chaque largeur cible
+- [x] Outils et inspecteur utilisables en tiroirs
+- [x] Panneaux Versions et Conflit sans débordement
+- [x] Hauteur correcte avec viewport dynamique
 - [ ] Validation sur la tablette physique
-- [ ] Manipulation tactile
-- [ ] Drag tactile des pions
-- [ ] Changement d'étage par endpoint
+- [x] Manipulation tactile automatisée dans Chromium
+- [x] Drag tactile des pions verrouillé puis autorisé
+- [x] Changement d'étage par endpoint avec confirmation
 - [x] Absence de débordement horizontal
 - [x] Inspecteur joueur refermable
 

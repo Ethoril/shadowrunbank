@@ -194,6 +194,7 @@ const Editor = (() => {
         boardEl.addEventListener('pointerdown', onBoardPointerDown);
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
     }
 
     function snapCoord(v) {
@@ -379,7 +380,7 @@ const Editor = (() => {
                 token.y = bounded.y;
                 dragSession.moved = true;
                 MapView.moveTokenDiv(token.id, token.x, token.y);
-                if (window.Exploration) Exploration.observeTokenMove(token);
+                if (typeof Exploration !== 'undefined') Exploration.observeTokenMove(token);
             } else if (dragSession.kind === 'transition') {
                 const transition = Store.findTransition(dragSession.id);
                 const endpoint = transition && transition.endpoints.find(item => item.id === dragSession.endpointId);
@@ -412,7 +413,8 @@ const Editor = (() => {
                 const token = Store.findToken(completed.id);
                 if (token) {
                     Store.commitTokenPosition(token);
-                    const changedFloor = window.Exploration && Exploration.handleTokenRelease(token);
+                    const changedFloor = typeof Exploration !== 'undefined'
+                        && Exploration.handleTokenRelease(token);
                     if (!changedFloor) MapView.render();
                 }
             } else if (completed.moved) {
@@ -435,8 +437,9 @@ const Editor = (() => {
         if (!Store.isPlayerView() && !(ent && ent.patrol && ent.patrol.moving)) {
             Store.beginTransaction('Déplacer un dispositif');
             dragSession = { kind: 'entity', id: entityId, moved: false };
+            capturePointer(e);
         }
-        MapView.renderEntities();
+        MapView.updateSelectionClasses();
         Inspector.render();
     }
 
@@ -446,8 +449,9 @@ const Editor = (() => {
         if (!Store.isPlayerView()) {
             Store.beginTransaction('Déplacer un décor');
             dragSession = { kind: 'decor', id: decorId, moved: false };
+            capturePointer(e);
         }
-        MapView.render();
+        MapView.updateSelectionClasses();
         Inspector.render();
     }
 
@@ -459,11 +463,9 @@ const Editor = (() => {
         const playerCanMove = Store.ui.readOnly && !Store.ui.preview && token.playerMovable && !token.locked;
         if (!Store.isPlayerView() || playerCanMove) {
             dragSession = { kind: 'token', id: tokenId, moved: false };
-            if (e.currentTarget && e.currentTarget.setPointerCapture) {
-                try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) { /* facultatif */ }
-            }
+            capturePointer(e);
         }
-        MapView.renderTokens();
+        MapView.updateSelectionClasses();
         Inspector.render();
     }
 
@@ -473,9 +475,16 @@ const Editor = (() => {
         if (!Store.isPlayerView()) {
             Store.beginTransaction('Déplacer une transition');
             dragSession = { kind: 'transition', id: transitionId, endpointId, moved: false };
+            capturePointer(e);
         }
-        MapView.renderTransitions();
+        MapView.updateSelectionClasses();
         Inspector.render();
+    }
+
+    function capturePointer(event) {
+        if (!event.currentTarget || !event.currentTarget.setPointerCapture) return;
+        try { event.currentTarget.setPointerCapture(event.pointerId); }
+        catch (_) { /* capture facultative selon le navigateur */ }
     }
 
     function onWaypointPointerDown(e, entityId, index) {
@@ -488,6 +497,7 @@ const Editor = (() => {
         Store.ui.selection = { kind: 'entity', id: entityId };
         Store.beginTransaction('Déplacer un waypoint');
         dragSession = { kind: 'waypoint', id: entityId, index, moved: false };
+        capturePointer(e);
         Inspector.render();
     }
 

@@ -66,7 +66,11 @@ const Inspector = (() => {
         if (Store.isPlayerView()) {
             const selectionKey = sel ? sel.kind + ':' + sel.id : '';
             if (selectionKey && selectionKey !== lastPlayerSelection) {
-                document.body.classList.add('inspector-open');
+                if (window.App && typeof App.openInspectorDrawer === 'function') {
+                    App.openInspectorDrawer();
+                } else {
+                    document.body.classList.add('inspector-open');
+                }
             }
             lastPlayerSelection = selectionKey;
         } else {

@@ -14,6 +14,7 @@ const App = (() => {
     let pendingRemoteSnapshot = null;
     let pendingRemoteTokens = null;
     let pendingRemoteDiscoveries = null;
+    let lastPlayerView = null;
 
     function renderAll() {
         Store.ensureVisibleView();
@@ -27,9 +28,11 @@ const App = (() => {
 
     /* Classes du body + bouton de prévisualisation selon la vue courante */
     function updateViewChrome() {
-        document.body.classList.toggle('player-mode', Store.isPlayerView());
+        const playerView = Store.isPlayerView();
+        document.body.classList.toggle('player-mode', playerView);
         document.body.classList.toggle('preview-mode', Store.ui.preview);
-        if (!Store.isPlayerView()) document.body.classList.remove('inspector-open');
+        if (lastPlayerView !== null && lastPlayerView !== playerView) closeDrawers();
+        lastPlayerView = playerView;
         const btn = document.getElementById('preview-btn');
         if (btn) {
             btn.style.display = Store.ui.readOnly ? 'none' : '';
@@ -68,12 +71,56 @@ const App = (() => {
     }
 
     function wireInspectorDrawer() {
-        const toggle = document.getElementById('player-inspector-toggle');
-        const close = document.getElementById('inspector-close');
-        if (toggle) toggle.addEventListener('click', () =>
-            document.body.classList.toggle('inspector-open'));
-        if (close) close.addEventListener('click', () =>
-            document.body.classList.remove('inspector-open'));
+        const playerToggle = document.getElementById('player-inspector-toggle');
+        const toolsToggle = document.getElementById('tools-toggle');
+        const inspectorToggle = document.getElementById('inspector-toggle');
+        const toolsClose = document.getElementById('tools-close');
+        const inspectorClose = document.getElementById('inspector-close');
+        const backdrop = document.getElementById('panel-backdrop');
+        if (playerToggle) playerToggle.addEventListener('click', () => toggleDrawer('inspector'));
+        if (toolsToggle) toolsToggle.addEventListener('click', () => toggleDrawer('tools'));
+        if (inspectorToggle) inspectorToggle.addEventListener('click', () => toggleDrawer('inspector'));
+        if (toolsClose) toolsClose.addEventListener('click', closeDrawers);
+        if (inspectorClose) inspectorClose.addEventListener('click', closeDrawers);
+        if (backdrop) backdrop.addEventListener('click', closeDrawers);
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape'
+                && (document.body.classList.contains('tools-open')
+                    || document.body.classList.contains('inspector-open'))) {
+                closeDrawers();
+            }
+        });
+        updateDrawerControls();
+    }
+
+    function updateDrawerControls() {
+        const toolsOpen = document.body.classList.contains('tools-open');
+        const inspectorOpen = document.body.classList.contains('inspector-open');
+        const toolsToggle = document.getElementById('tools-toggle');
+        const inspectorToggle = document.getElementById('inspector-toggle');
+        const playerToggle = document.getElementById('player-inspector-toggle');
+        if (toolsToggle) toolsToggle.setAttribute('aria-expanded', toolsOpen ? 'true' : 'false');
+        if (inspectorToggle) inspectorToggle.setAttribute('aria-expanded', inspectorOpen ? 'true' : 'false');
+        if (playerToggle) playerToggle.setAttribute('aria-expanded', inspectorOpen ? 'true' : 'false');
+    }
+
+    function closeDrawers() {
+        document.body.classList.remove('tools-open', 'inspector-open');
+        updateDrawerControls();
+    }
+
+    function openInspectorDrawer() {
+        document.body.classList.remove('tools-open');
+        document.body.classList.add('inspector-open');
+        updateDrawerControls();
+    }
+
+    function toggleDrawer(name) {
+        const className = name === 'tools' ? 'tools-open' : 'inspector-open';
+        const open = !document.body.classList.contains(className);
+        closeDrawers();
+        if (open) document.body.classList.add(className);
+        updateDrawerControls();
     }
 
     /* --- Prévisualisation MJ : le plan filtré comme le voient les joueurs --- */
@@ -560,7 +607,13 @@ const App = (() => {
         const previewBtn = document.getElementById('preview-btn');
         if (previewBtn) previewBtn.addEventListener('click', togglePreview);
 
-        window.addEventListener('resize', () => MapView.render());
+        window.addEventListener('resize', () => {
+            if (window.innerWidth > 1600
+                || (window.innerWidth > 1180 && window.innerHeight < window.innerWidth)) {
+                closeDrawers();
+            }
+            MapView.render();
+        });
         window.addEventListener('pagehide', Store.handlePageHide);
 
         renderAll();
@@ -575,5 +628,5 @@ const App = (() => {
 
     document.addEventListener('DOMContentLoaded', boot);
 
-    return { renderAll, isAdmin: () => isAdmin };
+    return { renderAll, openInspectorDrawer, closeDrawers, isAdmin: () => isAdmin };
 })();

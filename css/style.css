@@ -14,6 +14,7 @@
     --purple: #bd00ff;
     --text-main: #c8e6c9;
     --text-muted: #527874;
+    --page-pad: 20px;
 }
 
 * { box-sizing: border-box; user-select: none; }
@@ -23,10 +24,15 @@ body {
     color: var(--text-main);
     font-family: 'Share Tech Mono', monospace;
     margin: 0;
-    padding: 20px;
+    padding: max(var(--page-pad), env(safe-area-inset-top))
+             max(var(--page-pad), env(safe-area-inset-right))
+             max(var(--page-pad), env(safe-area-inset-bottom))
+             max(var(--page-pad), env(safe-area-inset-left));
     display: flex;
     flex-direction: column;
+    width: 100vw;
     height: 100vh;
+    height: 100dvh;
     overflow: hidden;
 }
 
@@ -37,11 +43,12 @@ header {
     border-bottom: 1px solid var(--primary);
     padding-bottom: 10px;
     margin-bottom: 15px;
+    min-width: 0;
 }
 
-h1 { margin: 0; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2px; color: var(--primary); }
+h1 { margin: 0; min-width: 0; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2px; color: var(--primary); }
 
-.header-right { display: flex; align-items: center; gap: 20px; }
+.header-right { display: flex; min-width: 0; align-items: center; gap: 20px; }
 
 #save-status { color: var(--text-muted); font-size: 0.85rem; }
 #save-status.dirty { color: var(--warning); }
@@ -57,7 +64,8 @@ h1 { margin: 0; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2p
 #auth-user { color: var(--text-muted); font-size: 0.8rem; }
 
 #auth-btn, #preview-btn, #export-btn, #import-btn, #retry-cloud-btn,
-#undo-btn, #redo-btn, #snapshot-btn {
+#undo-btn, #redo-btn, #snapshot-btn, #tools-toggle, #inspector-toggle,
+#tools-close, #inspector-close {
     background: transparent;
     border: 1px solid rgba(0, 210, 255, 0.4);
     color: var(--primary);
@@ -69,12 +77,16 @@ h1 { margin: 0; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 2p
 }
 
 #auth-btn:hover, #preview-btn:hover, #export-btn:hover, #import-btn:hover, #retry-cloud-btn:hover,
-#undo-btn:hover:not(:disabled), #redo-btn:hover:not(:disabled), #snapshot-btn:hover:not(:disabled) {
+#undo-btn:hover:not(:disabled), #redo-btn:hover:not(:disabled), #snapshot-btn:hover:not(:disabled),
+#tools-toggle:hover, #inspector-toggle:hover, #tools-close:hover, #inspector-close:hover {
     background: rgba(0, 210, 255, 0.15);
     box-shadow: 0 0 8px rgba(0, 210, 255, 0.4);
 }
 
 .history-controls { display: flex; gap: 6px; }
+.layout-controls { display: none; gap: 6px; }
+.drawer-title { display: none; }
+#panel-backdrop { display: none; }
 .history-controls button:disabled { opacity: 0.35; cursor: default; }
 .clipboard-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .clipboard-actions button { padding: 6px 3px; font-size: 0.7rem; }
@@ -412,6 +424,7 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     position: absolute;
     top: 0; left: 0; width: 100%; height: 100%;
     z-index: 3;
+    pointer-events: none;
 }
 #decors-floor-layer.pass-through, #decors-layer.pass-through { pointer-events: none; }
 #decors-floor-layer.pass-through .decor, #decors-layer.pass-through .decor { pointer-events: none; }
@@ -430,6 +443,7 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     justify-content: center;
     min-width: 8px;
     min-height: 6px;
+    pointer-events: auto;
 }
 .decor-label {
     pointer-events: none;
@@ -459,6 +473,7 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     position: absolute;
     top: 0; left: 0; width: 100%; height: 100%;
     z-index: 5;
+    pointer-events: none;
 }
 #entities-layer.pass-through { pointer-events: none; }
 #entities-layer.pass-through .entity { pointer-events: none; }
@@ -469,6 +484,7 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     inset: 0;
     width: 100%;
     height: 100%;
+    pointer-events: none;
 }
 #transitions-layer { z-index: 6; }
 #tokens-layer { z-index: 7; }
@@ -490,6 +506,7 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     box-shadow: 0 0 10px rgba(255, 230, 109, 0.45);
     cursor: grab;
     touch-action: none;
+    pointer-events: auto;
 }
 .transition-endpoint::after {
     content: attr(data-symbol);
@@ -525,6 +542,7 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     text-shadow: 0 1px 3px #000;
     touch-action: none;
     user-select: none;
+    pointer-events: auto;
 }
 .runner-token:hover, .runner-token.selected {
     outline: 3px solid #fff;
@@ -556,6 +574,7 @@ input[type="color"] { width: 100%; min-height: 38px; background: var(--bg-dark);
     background: rgba(3, 7, 13, 0.75);
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
     transition: box-shadow 0.2s;
+    pointer-events: auto;
 }
 .entity:hover, .entity.selected {
     transform: translate(-50%, -50%) scale(1.3);
@@ -695,31 +714,112 @@ hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin:
     to { stroke-dashoffset: -20; }
 }
 
-/* MacBook compact : conserve les trois colonnes tout en donnant de l'air à la carte. */
-@media (max-width: 1300px) {
-    body { padding: 12px; }
-    .app-container { grid-template-columns: 210px minmax(0, 1fr) 270px; gap: 10px; }
-    .header-right { gap: 8px; }
+/* Ordinateur : réduit progressivement les panneaux sans sacrifier la carte. */
+@media (max-width: 1500px) {
+    :root { --page-pad: 12px; }
+    header { gap: 10px; }
     h1 { font-size: 1.15rem; }
+    .header-right { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+    .app-container { grid-template-columns: 220px minmax(320px, 1fr) 280px; gap: 10px; }
 }
 
-@media (max-width: 850px) {
-    .snapshot-panel-head { align-items: flex-start; flex-direction: column; }
-    .snapshot-columns { grid-template-columns: 1fr; }
+@media (max-width: 1300px) {
+    header { align-items: flex-start; flex-wrap: wrap; margin-bottom: 10px; }
+    header h1 { flex: 1 1 100%; }
+    .header-right { width: 100%; justify-content: flex-start; }
+    .app-container { grid-template-columns: 210px minmax(300px, 1fr) 270px; }
 }
 
-/* Tablettes joueur — couvre aussi la résolution native 2304×1440.
-   Seul le mode joueur est concerné : la disposition MJ reste celle du MacBook. */
+/* Ordinateur compact et tablette MJ logique : la carte reste seule dans la grille,
+   les deux panneaux deviennent des tiroirs accessibles depuis le header. */
+@media (max-width: 1180px), (max-width: 1600px) and (orientation: portrait) {
+    :root { --page-pad: 10px; }
+    header { gap: 7px; padding-bottom: 7px; margin-bottom: 8px; }
+    header h1 { flex: 1 1 100%; font-size: 1rem; }
+    .header-right { width: 100%; justify-content: flex-start; gap: 6px; }
+    .layout-controls { display: flex; }
+    .app-container {
+        position: relative;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+        min-width: 0;
+    }
+    .center-zone { min-width: 0; }
+    #tools-panel, #inspector-panel {
+        display: flex;
+        position: fixed;
+        z-index: 400;
+        top: 0;
+        bottom: 0;
+        width: min(360px, 88vw);
+        max-width: 100vw;
+        padding: max(16px, env(safe-area-inset-top)) 16px
+                 max(16px, env(safe-area-inset-bottom));
+        border-color: var(--primary);
+        overscroll-behavior: contain;
+        transition: transform 0.22s ease-out;
+    }
+    #tools-panel {
+        left: 0;
+        transform: translateX(-105%);
+        box-shadow: 14px 0 35px rgba(0, 0, 0, 0.78);
+    }
+    #inspector-panel {
+        right: 0;
+        transform: translateX(105%);
+        box-shadow: -14px 0 35px rgba(0, 0, 0, 0.78);
+    }
+    body.tools-open #tools-panel,
+    body.inspector-open #inspector-panel { transform: translateX(0); }
+    .drawer-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--primary);
+        font-size: 0.85rem;
+        text-transform: uppercase;
+    }
+    #tools-close, #inspector-close {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 44px;
+        min-height: 44px;
+        font-size: 1.35rem;
+    }
+    #panel-backdrop {
+        display: block;
+        position: fixed;
+        z-index: 350;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: rgba(0, 0, 0, 0.64);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.18s ease-out;
+    }
+    body.tools-open #panel-backdrop,
+    body.inspector-open #panel-backdrop { opacity: 1; pointer-events: auto; }
+}
+
+/* Mode joueur : carte prioritaire et inspecteur temporaire, y compris à la résolution
+   native 2304×1440 et sur les viewports logiques haute densité. */
 @media (max-width: 2400px) and (max-height: 2400px) {
-    body.player-mode { padding: 10px; }
-    body.player-mode header { margin-bottom: 8px; padding-bottom: 7px; }
+    body.player-mode { --page-pad: 10px; }
+    body.player-mode header { gap: 8px; margin-bottom: 8px; padding-bottom: 7px; }
     body.player-mode header h1 {
-        max-width: 42vw;
+        flex: 1 1 auto;
+        max-width: min(62vw, 760px);
         overflow: hidden;
         white-space: nowrap;
         text-overflow: ellipsis;
         font-size: 1rem;
     }
+    body.player-mode .layout-controls,
     body.player-mode #save-status,
     body.player-mode #status-ticker,
     body.player-mode #export-btn,
@@ -728,9 +828,9 @@ hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin:
     body.player-mode #snapshot-btn,
     body.player-mode .history-controls,
     body.player-mode #auth-user { display: none !important; }
-    body.player-mode .header-right { gap: 6px; }
+    body.player-mode .header-right { width: auto; margin-left: auto; gap: 6px; }
     body.player-mode #auth-btn,
-    body.player-mode #preview-btn { min-height: 40px; padding: 7px 10px; }
+    body.player-mode #preview-btn { min-height: 44px; padding: 7px 10px; }
     body.player-mode .app-container {
         position: relative;
         grid-template-columns: minmax(0, 1fr);
@@ -742,24 +842,26 @@ hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin:
         gap: 6px;
         flex-wrap: nowrap;
         overflow-x: auto;
+        overscroll-behavior-x: contain;
         padding-bottom: 2px;
     }
     body.player-mode .tab-btn {
+        flex: 0 0 auto;
         min-height: 44px;
         padding: 8px 14px;
-        flex: 0 0 auto;
     }
     body.player-mode #inspector-panel {
         display: flex;
         position: fixed;
-        z-index: 300;
+        z-index: 400;
         top: 0;
         right: 0;
         bottom: 0;
         width: min(390px, 82vw);
-        padding: 16px;
+        padding: max(16px, env(safe-area-inset-top)) 16px
+                 max(16px, env(safe-area-inset-bottom));
         border-color: var(--primary);
-        box-shadow: -14px 0 35px rgba(0, 0, 0, 0.75);
+        box-shadow: -14px 0 35px rgba(0, 0, 0, 0.78);
         transform: translateX(105%);
         transition: transform 0.22s ease-out;
     }
@@ -770,18 +872,14 @@ hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin:
         justify-content: center;
         min-width: 44px;
         min-height: 44px;
-        border: 1px solid var(--primary);
-        background: transparent;
-        color: var(--primary);
-        font: inherit;
-        font-size: 1.4rem;
+        font-size: 1.35rem;
     }
     body.player-mode #player-inspector-toggle {
         display: block;
         position: fixed;
-        z-index: 250;
-        right: 18px;
-        bottom: 18px;
+        z-index: 300;
+        right: max(18px, env(safe-area-inset-right));
+        bottom: max(18px, env(safe-area-inset-bottom));
         min-width: 92px;
         min-height: 44px;
         padding: 8px 12px;
@@ -792,22 +890,86 @@ hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin:
         font: inherit;
     }
     body.player-mode.inspector-open #player-inspector-toggle { display: none; }
+    body.player-mode #panel-backdrop {
+        display: block;
+        position: fixed;
+        z-index: 350;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: rgba(0, 0, 0, 0.64);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.18s ease-out;
+    }
+    body.player-mode.inspector-open #panel-backdrop { opacity: 1; pointer-events: auto; }
     body.player-mode #inspector-panel button,
     body.player-mode #inspector-panel select,
     body.player-mode #inspector-panel input { min-height: 44px; }
 }
 
-/* Portrait tablette, y compris 1440×2304 natif : tiroir par le bas. */
+/* Tablette portrait : tiroirs inférieurs afin de conserver toute la largeur de carte. */
 @media (max-width: 1600px) and (max-height: 2400px) and (orientation: portrait) {
-    body.player-mode header h1 { max-width: 52vw; }
+    #tools-panel, #inspector-panel,
     body.player-mode #inspector-panel {
         top: auto;
         left: 0;
+        right: 0;
+        bottom: 0;
         width: 100vw;
-        max-height: 48vh;
+        height: min(68dvh, 760px);
+        max-height: 76dvh;
         transform: translateY(105%);
-        box-shadow: 0 -14px 35px rgba(0, 0, 0, 0.78);
+        box-shadow: 0 -14px 35px rgba(0, 0, 0, 0.8);
     }
+    body.tools-open #tools-panel,
+    body.inspector-open #inspector-panel,
     body.player-mode.inspector-open #inspector-panel { transform: translateY(0); }
-    body.player-mode .map-wrapper { min-height: 0; }
+    body.player-mode header h1 { max-width: 58vw; }
+}
+
+/* Petites largeurs tablette : fenêtres système en modales défilables. */
+@media (max-width: 850px) {
+    header h1 { font-size: 0.9rem; letter-spacing: 1px; }
+    #status-ticker { display: none; }
+    .header-right > button,
+    .history-controls button,
+    .layout-controls button { min-height: 40px; }
+    .snapshot-panel {
+        position: fixed;
+        z-index: 520;
+        inset: max(10px, env(safe-area-inset-top))
+               max(10px, env(safe-area-inset-right))
+               max(10px, env(safe-area-inset-bottom))
+               max(10px, env(safe-area-inset-left));
+        margin: 0;
+        overflow: auto;
+        overscroll-behavior: contain;
+    }
+    .snapshot-panel-head { align-items: flex-start; flex-direction: column; }
+    .snapshot-actions { width: 100%; justify-content: flex-start; }
+    .snapshot-actions button { min-height: 44px; }
+    .snapshot-columns { grid-template-columns: 1fr; }
+    .snapshot-list { max-height: 190px; }
+    .conflict-panel {
+        position: fixed;
+        z-index: 520;
+        top: max(10px, env(safe-area-inset-top));
+        right: max(10px, env(safe-area-inset-right));
+        left: max(10px, env(safe-area-inset-left));
+        margin: 0;
+        align-items: stretch;
+        flex-direction: column;
+        background: rgba(25, 5, 8, 0.98);
+    }
+    .conflict-actions { justify-content: stretch; }
+    .conflict-actions button { flex: 1 1 180px; min-height: 44px; white-space: normal; }
+}
+
+@media (pointer: coarse) {
+    button, select, input[type="text"], input[type="number"] { min-height: 44px; }
+    .vis-eye { min-width: 36px; }
 }

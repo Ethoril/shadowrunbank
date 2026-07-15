@@ -638,6 +638,27 @@ const MapView = (() => {
         }
     }
 
+    function updateSelectionClasses() {
+        const selection = Store.ui.selection;
+        document.querySelectorAll('.entity[data-id]').forEach(element => {
+            element.classList.toggle('selected', !!selection
+                && selection.kind === 'entity' && selection.id === element.dataset.id);
+        });
+        document.querySelectorAll('.decor[data-id]').forEach(element => {
+            element.classList.toggle('selected', !!selection
+                && selection.kind === 'decor' && selection.id === element.dataset.id);
+        });
+        document.querySelectorAll('.runner-token[data-id]').forEach(element => {
+            element.classList.toggle('selected', !!selection
+                && selection.kind === 'token' && selection.id === element.dataset.id);
+        });
+        document.querySelectorAll('.transition-endpoint[data-transition-id]').forEach(element => {
+            element.classList.toggle('selected', !!selection
+                && selection.kind === 'transition'
+                && selection.id === element.dataset.transitionId);
+        });
+    }
+
     function render() {
         layoutBoard();
         renderRooms();
@@ -686,7 +707,7 @@ const MapView = (() => {
         catalog, render, renderDecors, renderTransitions, renderTokens,
         renderEntities, renderOverlay, renderCoverages, renderCones, renderPatrols, renderCables,
         gridPosFromEvent, cellFromEvent, moveEntityDiv, moveDecorDiv, moveTokenDiv,
-        moveTransitionEndpointDiv, setEntityScreenPos,
+        moveTransitionEndpointDiv, updateSelectionClasses, setEntityScreenPos,
         conePolygon, beamPolygon, rectanglePolygon, thresholdPolygon,
         computeOccluders, invalidateOccluders, isLineBlocked,
         focusElement,
