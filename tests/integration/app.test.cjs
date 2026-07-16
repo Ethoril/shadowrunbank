@@ -200,11 +200,13 @@ function mockCloudScript() {
                 return writeCollection('/__test-cloud/tokens', position, 'tokens-updated');
             },
             async deleteToken(id) {
+                if (location.search.includes('stale-delete=1')) await notifyTokens();
                 await fetch('/__test-cloud/tokens', {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id })
                 });
+                if (location.search.includes('stale-delete=1')) await notifyTokens();
                 channel.postMessage('tokens-updated');
                 return {};
             },
@@ -213,11 +215,13 @@ function mockCloudScript() {
                     '/__test-cloud/discoveries', discovery, 'discoveries-updated');
             },
             async deleteDiscoveries(ids) {
+                if (location.search.includes('stale-delete=1')) await notifyDiscoveries();
                 await fetch('/__test-cloud/discoveries', {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ids })
                 });
+                if (location.search.includes('stale-delete=1')) await notifyDiscoveries();
                 channel.postMessage('discoveries-updated');
                 return {};
             },
@@ -877,6 +881,42 @@ test('deux écrans synchronisent la position d’un pion et les découvertes', a
     });
     await second.waitForFunction(id => Store.isDiscovered('entity', id), discoveredId);
     assert.equal(await second.evaluate(id => Store.isDiscovered('entity', id), discoveredId), true);
+    await context.close();
+});
+
+test('supprimer les dernières données ne relance pas leur migration', async () => {
+    remotePlan = JSON.parse(fs.readFileSync(
+        path.join(ROOT, 'tests/fixtures/plan-v1-production.json'), 'utf8'));
+    remotePlan.revision = 0;
+    remoteTokens = [{
+        id: 'token-delete', name: 'Runner à supprimer', shortLabel: 'RS',
+        color: '#00d2ff', icon: 'runner', floorId: 'f_mrjazc0tos95t',
+        x: 2.5, y: 2.5, playerMovable: true, visible: true, locked: false,
+        updatedAt: Date.now()
+    }];
+    remoteDiscoveries = [{
+        id: 'room-delete', kind: 'room', elementId: 'r_mrjazc0tjak55',
+        floorId: 'f_mrjazc0tos95t', discoveredBy: 'token-delete',
+        discoveredAt: Date.now()
+    }];
+
+    const context = await browser.newContext();
+    await context.route('**/js/cloud.js*', route => route.abort());
+    await context.addInitScript(mockCloudScript);
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html?admin=1&stale-delete=1');
+    await page.waitForFunction(() => !Store.ui.readOnly
+        && Store.getTokens().length === 1 && Store.getDiscoveries().length === 1);
+
+    await page.evaluate(() => {
+        Store.deleteToken('token-delete');
+        Store.resetDiscoveries();
+    });
+    await page.waitForFunction(() => Store.getTokens().length === 0
+        && Store.getDiscoveries().length === 0);
+    await page.waitForTimeout(100);
+    assert.equal(remoteTokens.length, 0);
+    assert.equal(remoteDiscoveries.length, 0);
     await context.close();
 });
 
