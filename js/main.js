@@ -16,6 +16,7 @@ const App = (() => {
     let pendingRemoteDiscoveries = null;
     let tokenBootstrapResolved = false;
     let discoveryBootstrapResolved = false;
+    let collectionBootstrapAllowed = false;
     let lastPlayerView = null;
 
     function renderAll() {
@@ -437,6 +438,7 @@ const App = (() => {
     function processRemotePlan(remote) {
         if (!remote) {
             remoteExists = false;
+            collectionBootstrapAllowed = true;
             // Migration : le doc n'existe pas encore et on est admin → on pousse le plan local
             if (isAdmin) {
                 Store.saveNow();
@@ -448,6 +450,7 @@ const App = (() => {
         }
 
         remoteExists = true;
+        collectionBootstrapAllowed = remote.schemaVersion !== 2;
         let normalizedRemote;
         try {
             normalizedRemote = Store.preparePlan(remote).plan;
@@ -502,7 +505,8 @@ const App = (() => {
     function processRemoteTokens(tokens) {
         const canBootstrap = !tokenBootstrapResolved;
         tokenBootstrapResolved = true;
-        if (isAdmin && canBootstrap && tokens.length === 0 && Store.getTokens().length > 0) {
+        if (isAdmin && collectionBootstrapAllowed && canBootstrap
+            && tokens.length === 0 && Store.getTokens().length > 0) {
             Store.getTokens().forEach(token => Cloud.saveToken(token));
             return;
         }
@@ -513,7 +517,8 @@ const App = (() => {
     function processRemoteDiscoveries(discoveries) {
         const canBootstrap = !discoveryBootstrapResolved;
         discoveryBootstrapResolved = true;
-        if (isAdmin && canBootstrap && discoveries.length === 0 && Store.getDiscoveries().length > 0) {
+        if (isAdmin && collectionBootstrapAllowed && canBootstrap
+            && discoveries.length === 0 && Store.getDiscoveries().length > 0) {
             Store.getDiscoveries().forEach(discovery => Cloud.saveDiscovery(discovery));
             return;
         }

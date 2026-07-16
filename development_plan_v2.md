@@ -1242,4 +1242,4 @@ cas particuliers et gardera le projet simple à maintenir.
 | 2026-07-15 | Phase 8 | Tests unitaires/intégration, snapshot et workflows CI/déploiement manuel préparés | À renseigner |
 | 2026-07-16 | Phases 7 / 8 | Poignées de couverture sur la carte et synchronisation pions/découvertes testée entre deux écrans | À renseigner |
 | 2026-07-16 | Phase 8 | Site v14 publié, règles Firestore déployées et document de production confirmé en schéma v2 révision 9 | `3dce9bf` |
-| 2026-07-16 | Phase 8 | Snapshot cloud et déplacement multi-écrans validés en production ; correction de la recréation des dernières données après suppression | À renseigner |
+| 2026-07-16 | Phase 8 | Snapshot cloud et déplacement multi-écrans validés en production ; correction de la recréation des dernières données après suppression ou rechargement local périmé | À renseigner |
