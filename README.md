@@ -72,9 +72,10 @@ des modales contenues aux petites largeurs. La matrice automatisée couvre 1440�
 
 Le bouton `⛨ Versions` ouvre les 15 dernières sauvegardes locales et Firestore. Il permet de créer,
 restaurer ou supprimer une version ; une copie de l'état courant est automatiquement conservée avant
-toute restauration. Les copies cloud vivent dans `plans/main/snapshots`. Le déploiement GitHub Pages
-est volontairement manuel et rejoue toute la suite de tests avant publication ; voir
-[docs/production-runbook.md](docs/production-runbook.md).
+toute restauration. Les copies cloud vivent dans `plans/main/snapshots`. Un workflow GitHub Pages
+manuel rejoue toute la suite de tests avant publication ; le réglage Pages du dépôt doit encore être
+basculé de la publication automatique de `main` vers GitHub Actions pour rendre ce garde-fou
+exclusif. Voir [docs/production-runbook.md](docs/production-runbook.md).
 
 ## Sécurité
 
