@@ -10,5 +10,7 @@ await mkdir(output, { recursive: true });
 await cp(path.join(root, 'index.html'), path.join(output, 'index.html'));
 await cp(path.join(root, 'css'), path.join(output, 'css'), { recursive: true });
 await cp(path.join(root, 'js'), path.join(output, 'js'), { recursive: true });
+await mkdir(path.join(output, 'assets', 'icons'), { recursive: true });
+await cp(path.join(root, 'assets', 'icons', 'map'), path.join(output, 'assets', 'icons', 'map'), { recursive: true });
 
 console.log('Site statique prêt dans _site/');
