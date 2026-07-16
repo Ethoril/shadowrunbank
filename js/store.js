@@ -1383,10 +1383,22 @@ const Store = (() => {
     /* Stoppe la ronde en figeant la position animée dans x/y */
     function stopPatrol(ent) {
         if (!ent.patrol || !ent.patrol.moving) return;
-        const pos = Anim.patrolPosition(ent.patrol, Date.now());
-        if (pos) {
-            ent.x = Math.round(pos.x * 100) / 100;
-            ent.y = Math.round(pos.y * 100) / 100;
+        const pose = Anim.patrolPose(ent.patrol, Date.now());
+        if (pose) {
+            ent.x = Math.round(pose.x * 100) / 100;
+            ent.y = Math.round(pose.y * 100) / 100;
+            // Une fois arrêté, le mobile continue de regarder dans la dernière
+            // direction parcourue. Le balayage conserve son amplitude relative.
+            if (pose.direction !== null && ent.coverage && ent.coverage.shape === 'cone') {
+                const previousDirection = ent.coverage.direction;
+                ent.coverage.direction = pose.direction;
+                if (ent.coverage.sweep) {
+                    ent.coverage.sweep.from = pose.direction
+                        + (ent.coverage.sweep.from - previousDirection);
+                    ent.coverage.sweep.to = pose.direction
+                        + (ent.coverage.sweep.to - previousDirection);
+                }
+            }
         }
         ent.patrol.moving = false;
         touch();
@@ -1448,7 +1460,7 @@ const Store = (() => {
             };
         } else {
             // fige la direction courante du balayage
-            ent.coverage.direction = Math.round(Anim.sweepDirection(ent.coverage, Date.now()));
+            ent.coverage.direction = Math.round(Anim.coverageDirection(ent, Date.now()));
             ent.coverage.sweep = null;
         }
         touch();

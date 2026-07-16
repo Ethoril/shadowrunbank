@@ -176,6 +176,65 @@ test('les calculs de ronde et de couverture restent déterministes', () => {
     assert.equal(cone[0][1], 5);
 });
 
+test('le cap de ronde suit les virages et s’inverse sur le trajet retour', () => {
+    const { Anim } = loadApplicationCore();
+    const loop = {
+        points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+        loop: true,
+        moving: true,
+        speed: 1,
+        anchorAt: 0
+    };
+    assert.equal(Anim.patrolPose(loop, 5000).direction, 0);
+    assert.equal(Anim.patrolPose(loop, 15000).direction, 90);
+
+    const shuttle = { ...loop, points: [{ x: 0, y: 0 }, { x: 10, y: 0 }], loop: false };
+    const returning = Anim.patrolPose(shuttle, 15000);
+    assert.equal(returning.x, 5);
+    assert.equal(returning.direction, 180);
+});
+
+test('le cône d’un mobile regarde devant pendant toute sa ronde', () => {
+    const { Store, Anim } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[0];
+    const guard = Store.addEntity('armed_guard', floor.id, 0, 0, 'Garde');
+    guard.coverage.direction = 35;
+    guard.patrol = {
+        points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+        loop: true,
+        moving: true,
+        speed: 1,
+        anchorAt: 0,
+        revealed: false
+    };
+
+    assert.equal(Anim.coverageDirection(guard, 5000), 0);
+    assert.equal(Anim.coverageDirection(guard, 15000), 90);
+
+    guard.coverage.sweep = { from: 25, to: 45, period: 8, anchorAt: 0 };
+    // À mi-course du balayage, le décalage est +10° autour du devant sud.
+    assert.equal(Anim.coverageDirection(guard, 12000), 100);
+});
+
+test('arrêter une ronde conserve la dernière orientation du mobile', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[0];
+    const guard = Store.addEntity('armed_guard', floor.id, 0, 0, 'Garde');
+    guard.patrol = {
+        points: [{ x: 0, y: 0 }, { x: 10, y: 0 }],
+        loop: false,
+        moving: true,
+        speed: 1,
+        anchorAt: Date.now() - 15000,
+        revealed: false
+    };
+    Store.stopPatrol(guard);
+    assert.equal(guard.coverage.direction, 180);
+    assert.ok(Math.abs(guard.x - 5) < 0.1);
+});
+
 test('le catalogue expose tous les dispositifs attendus', () => {
     const { EntityCatalog } = loadApplicationCore();
     const types = Object.keys(EntityCatalog.types);

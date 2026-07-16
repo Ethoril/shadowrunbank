@@ -7,12 +7,12 @@
 
 const Anim = (() => {
 
-    /* Position le long de la ronde à l'instant `now` (epoch ms).
-       Boucle : distance modulo périmètre. Aller-retour : onde triangle. */
-    function patrolPosition(patrol, now) {
+    /* Pose le long de la ronde à l'instant `now` (epoch ms).
+       Le cap suit le segment parcouru, y compris sur le trajet retour. */
+    function patrolPose(patrol, now) {
         const pts = patrol.points;
         if (!pts || pts.length === 0) return null;
-        if (pts.length === 1) return { x: pts[0].x, y: pts[0].y };
+        if (pts.length === 1) return { x: pts[0].x, y: pts[0].y, direction: null };
 
         const segs = [];
         let total = 0;
@@ -21,30 +21,48 @@ const Anim = (() => {
         for (let i = 0; i < segCount; i++) {
             const a = pts[i], b = pts[(i + 1) % n];
             const len = Math.hypot(b.x - a.x, b.y - a.y);
+            if (len <= 1e-9) continue;
             segs.push({ a, b, len });
             total += len;
         }
-        if (total === 0) return { x: pts[0].x, y: pts[0].y };
+        if (total === 0) return { x: pts[0].x, y: pts[0].y, direction: null };
 
         const speed = patrol.speed > 0 ? patrol.speed : 1;
         let dist = ((now - (patrol.anchorAt || 0)) / 1000) * speed;
+        let returning = false;
         if (patrol.loop) {
             dist = ((dist % total) + total) % total;
         } else {
             const cycle = 2 * total;
             dist = ((dist % cycle) + cycle) % cycle;
-            if (dist > total) dist = cycle - dist; // aller-retour
+            returning = dist >= total;
+            if (returning) dist = cycle - dist; // trajet retour
         }
 
-        for (const s of segs) {
-            if (dist <= s.len) {
+        for (let index = 0; index < segs.length; index += 1) {
+            const s = segs[index];
+            // Au waypoint, le mobile adopte immédiatement le cap du segment suivant.
+            const onSegment = returning ? dist <= s.len : dist < s.len || index === segs.length - 1;
+            if (onSegment) {
                 const t = s.len === 0 ? 0 : dist / s.len;
-                return { x: s.a.x + (s.b.x - s.a.x) * t, y: s.a.y + (s.b.y - s.a.y) * t };
+                const dx = returning ? s.a.x - s.b.x : s.b.x - s.a.x;
+                const dy = returning ? s.a.y - s.b.y : s.b.y - s.a.y;
+                return {
+                    x: s.a.x + (s.b.x - s.a.x) * t,
+                    y: s.a.y + (s.b.y - s.a.y) * t,
+                    direction: Math.atan2(dy, dx) * 180 / Math.PI
+                };
             }
             dist -= s.len;
         }
         const last = patrol.loop ? pts[0] : pts[n - 1];
-        return { x: last.x, y: last.y };
+        return { x: last.x, y: last.y, direction: null };
+    }
+
+    /* Compatibilité avec les appels qui n'ont besoin que de la position. */
+    function patrolPosition(patrol, now) {
+        const pose = patrolPose(patrol, now);
+        return pose ? { x: pose.x, y: pose.y } : null;
     }
 
     /* Azimut d'une couverture à l'instant `now` : statique, ou onde triangle
@@ -57,6 +75,24 @@ const Anim = (() => {
         if (phase < 0) phase += 1;
         const tri = phase < 0.5 ? phase * 2 : 2 - phase * 2; // 0→1→0
         return s.from + (s.to - s.from) * tri;
+    }
+
+    /* Direction effective d'une couverture. Pour un cône porté par une entité
+       en ronde, le segment parcouru définit le devant. Un balayage reste un
+       décalage relatif autour de ce cap au lieu de rester attaché à la carte. */
+    function coverageDirection(ent, now) {
+        if (!ent || !ent.coverage) return 0;
+        const coverage = ent.coverage;
+        const absoluteDirection = sweepDirection(coverage, now);
+        const state = Store.getEffectiveState(ent);
+        const moving = state !== 'offline' && state !== 'neutralized'
+            && ent.patrol && ent.patrol.moving && ent.patrol.points.length >= 2;
+        if (!moving || coverage.shape !== 'cone') return absoluteDirection;
+
+        const pose = patrolPose(ent.patrol, now);
+        if (!pose || pose.direction === null) return absoluteDirection;
+        const sweepOffset = coverage.sweep ? absoluteDirection - coverage.direction : 0;
+        return pose.direction + sweepOffset;
     }
 
     /* Position effective d'une entité : animée si en ronde, sinon x/y stockés */
@@ -105,5 +141,5 @@ const Anim = (() => {
         if (rafId === null) rafId = requestAnimationFrame(tick);
     }
 
-    return { patrolPosition, sweepDirection, effectivePos, start };
+    return { patrolPose, patrolPosition, sweepDirection, coverageDirection, effectivePos, start };
 })();
