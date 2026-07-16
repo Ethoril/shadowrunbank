@@ -19,6 +19,32 @@ const MapView = (() => {
 
     const board = () => document.getElementById('board');
     const svgGroup = id => document.getElementById(id);
+    const iconSrc = key => 'assets/icons/map/' + key + '.png';
+
+    function appendCatalogIcon(container, key, className, fallbackLabel, fallbackClassName) {
+        const fallback = () => {
+            if (!fallbackLabel || container.querySelector('.' + fallbackClassName)) return;
+            const label = document.createElement('span');
+            label.className = fallbackClassName;
+            label.textContent = fallbackLabel;
+            container.appendChild(label);
+        };
+        if (!key) {
+            fallback();
+            return null;
+        }
+        const image = document.createElement('img');
+        image.className = className;
+        image.src = iconSrc(key);
+        image.alt = '';
+        image.draggable = false;
+        image.addEventListener('error', () => {
+            image.remove();
+            fallback();
+        }, { once: true });
+        container.appendChild(image);
+        return image;
+    }
 
     /* --- Dimensionnement : la grille logique remplit le wrapper en cases carrées --- */
     function layoutBoard() {
@@ -312,10 +338,7 @@ const MapView = (() => {
             div.style.color = definition.color;
             div.style.setProperty('--decor-rotation', decor.rotation + 'deg');
             div.title = decor.name;
-            const label = document.createElement('span');
-            label.className = 'decor-label';
-            label.textContent = definition.label;
-            div.appendChild(label);
+            appendCatalogIcon(div, definition.icon, 'decor-icon', definition.label, 'decor-label');
             div.addEventListener('pointerdown', event => {
                 event.stopPropagation();
                 Editor.onDecorPointerDown(event, decor.id);
@@ -332,6 +355,7 @@ const MapView = (() => {
         if (!floor) return;
         layer.classList.toggle('pass-through', Store.ui.activeTool !== 'select');
         const labels = { stairs: 'ESC', elevator: 'ELV', ladder: 'ECH', hatch: 'TRP', passage: 'PAS' };
+        const icons = { stairs: 'stairs', elevator: 'elevator', ladder: 'ladder', hatch: 'hatch', passage: 'opening' };
         Store.visibleTransitions(floor.id).forEach(transition => {
             transition.endpoints.filter(endpoint => endpoint.floorId === floor.id).forEach(endpoint => {
                 const div = document.createElement('div');
@@ -345,6 +369,12 @@ const MapView = (() => {
                 div.style.top = (endpoint.y * cellPx) + 'px';
                 div.dataset.symbol = labels[transition.type] || 'TR';
                 div.title = transition.name + (endpoint.label ? ' — ' + endpoint.label : '');
+                const transitionIcon = icons[transition.type];
+                if (transitionIcon) {
+                    div.classList.add('has-icon');
+                    const image = appendCatalogIcon(div, transitionIcon, 'transition-icon', '', 'transition-label');
+                    if (image) image.addEventListener('error', () => div.classList.remove('has-icon'), { once: true });
+                }
                 div.addEventListener('pointerdown', event => {
                     event.stopPropagation();
                     Editor.onTransitionPointerDown(event, transition.id, endpoint.id);
@@ -373,7 +403,12 @@ const MapView = (() => {
             div.style.top = (token.y * cellPx) + 'px';
             div.style.color = token.color;
             div.style.borderColor = token.color;
-            div.textContent = token.shortLabel;
+            const tokenIcon = /^[a-z0-9-]+$/.test(token.icon || '') ? token.icon : 'runner';
+            appendCatalogIcon(div, tokenIcon, 'token-icon', '', 'token-icon-fallback');
+            const label = document.createElement('span');
+            label.className = 'token-label';
+            label.textContent = token.shortLabel;
+            div.appendChild(label);
             div.title = token.name;
             div.addEventListener('pointerdown', event => {
                 event.stopPropagation();
@@ -406,7 +441,7 @@ const MapView = (() => {
             div.style.top = (pos.y * cellPx) + 'px';
             div.style.color = def.color;
             div.style.borderColor = def.color;
-            div.innerText = def.label;
+            appendCatalogIcon(div, def.icon, 'entity-icon', def.label, 'entity-label');
             div.title = ent.name;
             if (sel && sel.kind === 'entity' && sel.id === ent.id) div.classList.add('selected');
 

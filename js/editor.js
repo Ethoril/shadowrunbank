@@ -46,8 +46,8 @@ const Editor = (() => {
         structure.appendChild(toolButton('select', '⊹ Mode Sélection', '#00d2ff'));
         structure.appendChild(toolButton('paint', '✏ Dessiner Pièce', '#4af626'));
         structure.appendChild(toolButton('erase', '⌫ Gomme', '#ff2a2a'));
-        structure.appendChild(toolButton('token', '◉ Nouveau pion PJ', '#00d2ff'));
-        structure.appendChild(toolButton('transition:new', '◆ Nouvelle transition', '#ffe66d'));
+        structure.appendChild(toolButton('token', '◉ Nouveau pion PJ', '#00d2ff', 'runner'));
+        structure.appendChild(toolButton('transition:new', '◆ Nouvelle transition', '#ffe66d', 'stairs'));
 
         const clipboardActions = document.createElement('div');
         clipboardActions.className = 'clipboard-actions';
@@ -99,7 +99,7 @@ const Editor = (() => {
             const list = document.createElement('div');
             list.className = 'tool-category-list';
             entries.forEach(([type, def]) => {
-                list.appendChild(toolButton(type, '[+] ' + def.name, def.color));
+                list.appendChild(toolButton(type, '[+] ' + def.name, def.color, def.icon));
             });
             group.appendChild(list);
             devices.appendChild(group);
@@ -118,7 +118,7 @@ const Editor = (() => {
                 const list = document.createElement('div');
                 list.className = 'tool-category-list';
                 DecorCatalog.entries(category.id).forEach(([type, definition]) => {
-                    list.appendChild(toolButton('decor:' + type, '[+] ' + definition.name, definition.color));
+                    list.appendChild(toolButton('decor:' + type, '[+] ' + definition.name, definition.color, definition.icon));
                 });
                 group.appendChild(list);
                 decors.appendChild(group);
@@ -126,10 +126,27 @@ const Editor = (() => {
         }
     }
 
-    function toolButton(tool, text, color) {
+    function toolButton(tool, text, color, icon) {
         const btn = document.createElement('button');
         btn.className = 'tool-btn' + (Store.ui.activeTool === tool ? ' active' : '');
-        btn.innerHTML = `<span class="icon-preview" style="background:${color}"></span> ${text}`;
+        const preview = document.createElement('span');
+        preview.className = 'icon-preview' + (icon ? ' has-image' : ' color-dot');
+        preview.style.color = color;
+        if (icon) {
+            const image = document.createElement('img');
+            image.src = 'assets/icons/map/' + icon + '.png';
+            image.alt = '';
+            image.draggable = false;
+            image.addEventListener('error', () => {
+                preview.classList.remove('has-image');
+                preview.classList.add('color-dot');
+                image.remove();
+            }, { once: true });
+            preview.appendChild(image);
+        }
+        const label = document.createElement('span');
+        label.textContent = text;
+        btn.append(preview, label);
         btn.addEventListener('click', () => setTool(tool));
         return btn;
     }
