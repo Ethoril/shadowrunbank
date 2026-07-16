@@ -14,6 +14,8 @@ const App = (() => {
     let pendingRemoteSnapshot = null;
     let pendingRemoteTokens = null;
     let pendingRemoteDiscoveries = null;
+    let tokenBootstrapResolved = false;
+    let discoveryBootstrapResolved = false;
     let lastPlayerView = null;
 
     function renderAll() {
@@ -498,7 +500,9 @@ const App = (() => {
     }
 
     function processRemoteTokens(tokens) {
-        if (isAdmin && tokens.length === 0 && Store.getTokens().length > 0) {
+        const canBootstrap = !tokenBootstrapResolved;
+        tokenBootstrapResolved = true;
+        if (isAdmin && canBootstrap && tokens.length === 0 && Store.getTokens().length > 0) {
             Store.getTokens().forEach(token => Cloud.saveToken(token));
             return;
         }
@@ -507,7 +511,9 @@ const App = (() => {
     }
 
     function processRemoteDiscoveries(discoveries) {
-        if (isAdmin && discoveries.length === 0 && Store.getDiscoveries().length > 0) {
+        const canBootstrap = !discoveryBootstrapResolved;
+        discoveryBootstrapResolved = true;
+        if (isAdmin && canBootstrap && discoveries.length === 0 && Store.getDiscoveries().length > 0) {
             Store.getDiscoveries().forEach(discovery => Cloud.saveDiscovery(discovery));
             return;
         }

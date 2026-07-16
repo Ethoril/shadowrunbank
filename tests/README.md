@@ -7,7 +7,8 @@ La phase 8 sépare désormais deux niveaux de contrôle :
   les modes MJ/joueur de 768 à 2304 px, les tiroirs et fenêtres système, reproduit un vrai geste
   tactile sur un pion verrouillé puis autorisé, confirme une transition entre étages, manipule les
   poignées de faisceau, zone et seuil, synchronise pions et découvertes entre deux écrans, puis
-  simule un conflit entre deux clients ;
+  vérifie que leur dernière suppression ne relance pas la migration et simule un conflit entre
+  deux clients ;
 - `test_smoke.html` reste ouvrable directement pour un diagnostic visuel rapide.
 
 Installation puis exécution :
