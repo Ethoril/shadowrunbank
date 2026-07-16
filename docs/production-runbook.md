@@ -2,9 +2,9 @@
 
 La migration Firestore et le workflow de déploiement applicatif sont volontairement manuels.
 
-> **État du dépôt au 2026-07-16 :** le réglage GitHub Pages publie encore automatiquement `main`
-> via `pages-build-deployment`. Basculer la source Pages sur **GitHub Actions** dans les réglages du
-> dépôt pour que le workflow manuel ci-dessous devienne l’unique voie de publication.
+> **État du dépôt au 2026-07-16 :** la source GitHub Pages est configurée sur **GitHub Actions**.
+> Les poussées sur `main` ne publient plus automatiquement le site ; le workflow manuel ci-dessous
+> est l’unique voie de publication.
 
 ## 1. Préparation
 
