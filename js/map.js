@@ -492,7 +492,7 @@ const MapView = (() => {
 
             const pos = Anim.effectivePos(ent, now);
             const coverage = ent.coverage;
-            const dir = Anim.sweepDirection(coverage, now);
+            const dir = Anim.coverageDirection(ent, now);
             const occluders = computeOccluders(floor.id, coverage.channel);
             let shape;
             if (coverage.shape === 'circle' && occluders.length === 0) {
@@ -601,7 +601,7 @@ const MapView = (() => {
 
         const coverage = ent.coverage;
         const at = now === undefined ? Date.now() : now;
-        const direction = Anim.sweepDirection(coverage, at);
+        const direction = Anim.coverageDirection(ent, at);
         const origin = Anim.effectivePos(ent, at);
         if (coverage.shape === 'circle') {
             appendCoverageHandle(group, ent, 'radius',

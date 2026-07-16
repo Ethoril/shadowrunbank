@@ -596,7 +596,7 @@ const Editor = (() => {
             moved: false,
             hadMovingPatrol: !!(ent.patrol && ent.patrol.moving),
             hadSweep: !!ent.coverage.sweep,
-            frozenDirection: Anim.sweepDirection(ent.coverage, Date.now())
+            frozenDirection: Anim.coverageDirection(ent, Date.now())
         };
         capturePointer(e);
     }
