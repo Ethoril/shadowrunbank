@@ -1068,8 +1068,8 @@ Durée indicative : 2 jours.
 - [x] Simulation automatisée d'un conflit entre deux clients
 - [ ] Test réel MacBook et tablette
 - [ ] Test de conflit entre deux machines
-- [ ] Migration du plan Firestore
-- [ ] Déploiement progressif
+- [x] Migration du plan Firestore
+- [x] Déploiement de la v2 et des règles Firestore
 
 Ordre de grandeur total : **15 à 24 jours de développement concentré**, selon le
 niveau de finition graphique des décors et des nouveaux dispositifs.
@@ -1241,3 +1241,4 @@ cas particuliers et gardera le projet simple à maintenir.
 | 2026-07-15 | Phase 7 | Historique, duplication, waypoints éditables et interfaces tablette | À renseigner |
 | 2026-07-15 | Phase 8 | Tests unitaires/intégration, snapshot et workflows CI/déploiement manuel préparés | À renseigner |
 | 2026-07-16 | Phases 7 / 8 | Poignées de couverture sur la carte et synchronisation pions/découvertes testée entre deux écrans | À renseigner |
+| 2026-07-16 | Phase 8 | Site v14 publié, règles Firestore déployées et document de production confirmé en schéma v2 révision 9 | `3dce9bf` |

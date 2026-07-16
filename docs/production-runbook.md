@@ -1,7 +1,10 @@
 # Runbook de migration et déploiement v2
 
-Cette procédure est volontairement manuelle. Elle évite qu’un push de code déclenche seul une
-migration Firestore ou une publication GitHub Pages.
+La migration Firestore et le workflow de déploiement applicatif sont volontairement manuels.
+
+> **État du dépôt au 2026-07-16 :** le réglage GitHub Pages publie encore automatiquement `main`
+> via `pages-build-deployment`. Basculer la source Pages sur **GitHub Actions** dans les réglages du
+> dépôt pour que le workflow manuel ci-dessous devienne l’unique voie de publication.
 
 ## 1. Préparation
 
