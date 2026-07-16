@@ -15,6 +15,7 @@ const MapView = (() => {
     let walls = [];   // segments de murs de l'étage courant (coordonnées grille)
     const occluderCache = new Map();
     let occluderBuilds = 0;
+    let lastCameraFeedSignature = '';
     const ROOM_OCCLUSION_CHANNELS = new Set(['optical', 'infrared', 'laser']);
 
     const board = () => document.getElementById('board');
@@ -204,6 +205,54 @@ const MapView = (() => {
         });
     }
 
+    function pointOnSegment(point, start, end) {
+        const cross = (point[1] - start[1]) * (end[0] - start[0])
+            - (point[0] - start[0]) * (end[1] - start[1]);
+        if (Math.abs(cross) > 1e-7) return false;
+        return point[0] >= Math.min(start[0], end[0]) - 1e-7
+            && point[0] <= Math.max(start[0], end[0]) + 1e-7
+            && point[1] >= Math.min(start[1], end[1]) - 1e-7
+            && point[1] <= Math.max(start[1], end[1]) + 1e-7;
+    }
+
+    function pointInPolygon(point, polygon) {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            if (pointOnSegment(point, polygon[j], polygon[i])) return true;
+            const xi = polygon[i][0], yi = polygon[i][1];
+            const xj = polygon[j][0], yj = polygon[j][1];
+            const crosses = (yi > point[1]) !== (yj > point[1])
+                && point[0] < (xj - xi) * (point[1] - yi) / (yj - yi) + xi;
+            if (crosses) inside = !inside;
+        }
+        return inside;
+    }
+
+    function segmentIntersects(a, b, c, d) {
+        const orient = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1])
+            - (q[1] - p[1]) * (r[0] - p[0]);
+        const o1 = orient(a, b, c), o2 = orient(a, b, d);
+        const o3 = orient(c, d, a), o4 = orient(c, d, b);
+        if (((o1 > 1e-7 && o2 < -1e-7) || (o1 < -1e-7 && o2 > 1e-7))
+            && ((o3 > 1e-7 && o4 < -1e-7) || (o3 < -1e-7 && o4 > 1e-7))) return true;
+        return (Math.abs(o1) <= 1e-7 && pointOnSegment(c, a, b))
+            || (Math.abs(o2) <= 1e-7 && pointOnSegment(d, a, b))
+            || (Math.abs(o3) <= 1e-7 && pointOnSegment(a, c, d))
+            || (Math.abs(o4) <= 1e-7 && pointOnSegment(b, c, d));
+    }
+
+    function polygonsIntersect(a, b) {
+        if (a.some(point => pointInPolygon(point, b))
+            || b.some(point => pointInPolygon(point, a))) return true;
+        for (let ai = 0; ai < a.length; ai += 1) {
+            const an = (ai + 1) % a.length;
+            for (let bi = 0; bi < b.length; bi += 1) {
+                if (segmentIntersects(a[ai], a[an], b[bi], b[(bi + 1) % b.length])) return true;
+            }
+        }
+        return false;
+    }
+
     function occluderSignature(floorId, channel) {
         const rooms = ROOM_OCCLUSION_CHANNELS.has(channel)
             ? Store.floorRooms(floorId).map(room => [room.id, room.cells]) : [];
@@ -243,6 +292,78 @@ const MapView = (() => {
 
     function invalidateOccluders() {
         occluderCache.clear();
+    }
+
+    /* Vue live fournie par les caméras piratées. Rien n'est écrit dans les
+       découvertes : si un mobile sort du cône, il disparaît immédiatement. */
+    function cameraFeedSnapshot(floorId, now) {
+        const at = now === undefined ? Date.now() : now;
+        const roomIds = new Set(), entityIds = new Set();
+        const decorIds = new Set(), transitionIds = new Set();
+        const cameras = Store.cameraFeedCameras(floorId);
+
+        cameras.forEach(camera => {
+            const position = Anim.effectivePos(camera, at);
+            const coverage = camera.coverage;
+            const polygon = conePolygon(position.x, position.y,
+                Anim.coverageDirection(camera, at), coverage.angle, coverage.range,
+                computeOccluders(floorId, coverage.channel || 'optical'));
+            const room = Store.roomAt(floorId, Math.floor(position.x), Math.floor(position.y));
+            if (room) roomIds.add(room.id);
+
+            Store.floorEntities(floorId).forEach(entity => {
+                if (entity.id === camera.id) return;
+                const target = Anim.effectivePos(entity, at);
+                if (pointInPolygon([target.x, target.y], polygon)) entityIds.add(entity.id);
+            });
+            Store.floorDecors(floorId).forEach(decor => {
+                const target = orientedRectangle(decor.x, decor.y, decor.rotation,
+                    decor.width, decor.height, true);
+                if (polygonsIntersect(target, polygon)) decorIds.add(decor.id);
+            });
+            Store.getPlan().transitions.forEach(transition => {
+                if (transition.endpoints.some(endpoint => endpoint.floorId === floorId
+                    && pointInPolygon([endpoint.x, endpoint.y], polygon))) {
+                    transitionIds.add(transition.id);
+                }
+            });
+        });
+
+        const sorted = set => [...set].sort();
+        const snapshot = {
+            floorId,
+            cameraIds: cameras.map(camera => camera.id).sort(),
+            roomIds: sorted(roomIds),
+            entityIds: sorted(entityIds),
+            decorIds: sorted(decorIds),
+            transitionIds: sorted(transitionIds)
+        };
+        snapshot.signature = JSON.stringify(snapshot);
+        return snapshot;
+    }
+
+    function isCameraFeedVisible(item, kind, now) {
+        if (!item || !Store.isPlayerView()) return false;
+        if (kind === 'floor' || kind === 'room') return Store.isCameraFeedRevealed(item, kind);
+        const floor = Store.currentFloor();
+        const floorId = item.floorId || (floor && floor.id);
+        if (!floorId) return false;
+        const snapshot = cameraFeedSnapshot(floorId, now);
+        if (kind === 'entity') return snapshot.entityIds.includes(item.id);
+        if (kind === 'decor') return snapshot.decorIds.includes(item.id);
+        if (kind === 'transition') return snapshot.transitionIds.includes(item.id);
+        return false;
+    }
+
+    function feedSnapshot(floorId, now, snapshot) {
+        if (!Store.isPlayerView()) return null;
+        return snapshot || cameraFeedSnapshot(floorId, now);
+    }
+
+    function cameraVisibleItems(items, kind, snapshot) {
+        if (!snapshot) return items;
+        const ids = new Set(snapshot[kind + 'Ids']);
+        return items.filter(item => Store.isEffectivelyRevealed(item, kind) || ids.has(item.id));
     }
 
     function isLineBlocked(floorId, from, to, channel, targetMargin) {
@@ -307,7 +428,7 @@ const MapView = (() => {
     }
 
     /* --- Rendu des décors, séparé entre sol et obstacles --- */
-    function renderDecors() {
+    function renderDecors(now, snapshot) {
         const floorLayer = document.getElementById('decors-floor-layer');
         const obstacleLayer = document.getElementById('decors-layer');
         if (!floorLayer || !obstacleLayer) return;
@@ -320,13 +441,17 @@ const MapView = (() => {
         obstacleLayer.classList.toggle('pass-through', passThrough);
         const selection = Store.ui.selection;
 
-        Store.visibleDecors(floor.id).forEach(decor => {
+        const feed = feedSnapshot(floor.id, now, snapshot);
+        const decors = Store.isPlayerView()
+            ? cameraVisibleItems(Store.floorDecors(floor.id), 'decor', feed)
+            : Store.visibleDecors(floor.id);
+        decors.forEach(decor => {
             const definition = DecorCatalog.get(decor.type);
             const div = document.createElement('div');
             div.className = 'decor'
                 + (definition.layer === 'floor' ? ' floor-decor' : '')
                 + (decor.blocksVision.length ? ' blocks-vision' : '')
-                + (Store.isEffectivelyRevealed(decor, 'decor') ? '' : ' unrevealed');
+                + (Store.isPlayerView() || Store.isEffectivelyRevealed(decor, 'decor') ? '' : ' unrevealed');
             if (selection && selection.kind === 'decor' && selection.id === decor.id) {
                 div.classList.add('selected');
             }
@@ -347,7 +472,7 @@ const MapView = (() => {
         });
     }
 
-    function renderTransitions() {
+    function renderTransitions(now, snapshot) {
         const layer = document.getElementById('transitions-layer');
         if (!layer) return;
         layer.innerHTML = '';
@@ -356,13 +481,18 @@ const MapView = (() => {
         layer.classList.toggle('pass-through', Store.ui.activeTool !== 'select');
         const labels = { stairs: 'ESC', elevator: 'ELV', ladder: 'ECH', hatch: 'TRP', passage: 'PAS' };
         const icons = { stairs: 'stairs', elevator: 'elevator', ladder: 'ladder', hatch: 'hatch', passage: 'opening' };
-        Store.visibleTransitions(floor.id).forEach(transition => {
+        const feed = feedSnapshot(floor.id, now, snapshot);
+        const transitions = Store.isPlayerView()
+            ? cameraVisibleItems(Store.getPlan().transitions.filter(transition =>
+                transition.endpoints.some(endpoint => endpoint.floorId === floor.id)), 'transition', feed)
+            : Store.visibleTransitions(floor.id);
+        transitions.forEach(transition => {
             transition.endpoints.filter(endpoint => endpoint.floorId === floor.id).forEach(endpoint => {
                 const div = document.createElement('div');
                 div.className = 'transition-endpoint state-' + transition.state
                     + (Store.ui.selection && Store.ui.selection.kind === 'transition'
                         && Store.ui.selection.id === transition.id ? ' selected' : '')
-                    + (Store.isEffectivelyRevealed(transition, 'transition') ? '' : ' unrevealed');
+                    + (Store.isPlayerView() || Store.isEffectivelyRevealed(transition, 'transition') ? '' : ' unrevealed');
                 div.dataset.transitionId = transition.id;
                 div.dataset.endpointId = endpoint.id;
                 div.style.left = (endpoint.x * cellPx) + 'px';
@@ -419,23 +549,27 @@ const MapView = (() => {
     }
 
     /* --- Rendu des entités --- */
-    function renderEntities() {
+    function renderEntities(now, snapshot) {
         const layer = document.getElementById('entities-layer');
         layer.innerHTML = '';
         const floor = Store.currentFloor();
         if (!floor) return;
         const sel = Store.ui.selection;
-        const now = Date.now();
+        const at = now === undefined ? Date.now() : now;
+        const feed = feedSnapshot(floor.id, at, snapshot);
+        const entities = Store.isPlayerView()
+            ? cameraVisibleItems(Store.floorEntities(floor.id), 'entity', feed)
+            : Store.visibleEntities(floor.id);
 
         // Les entités ne captent la souris qu'en mode sélection (sinon elles gêneraient la peinture/tracé)
         layer.classList.toggle('pass-through', Store.ui.activeTool !== 'select');
 
-        Store.visibleEntities(floor.id).forEach(ent => {
+        entities.forEach(ent => {
             const def = EntityCatalog.get(ent.type);
-            const pos = Anim.effectivePos(ent, now);
+            const pos = Anim.effectivePos(ent, at);
             const div = document.createElement('div');
             div.className = 'entity state-' + Store.getEffectiveState(ent)
-                + (Store.isEffectivelyRevealed(ent, 'entity') ? '' : ' unrevealed');
+                + (Store.isPlayerView() || Store.isEffectivelyRevealed(ent, 'entity') ? '' : ' unrevealed');
             div.dataset.id = ent.id;
             div.style.left = (pos.x * cellPx) + 'px';
             div.style.top = (pos.y * cellPx) + 'px';
@@ -796,12 +930,16 @@ const MapView = (() => {
 
     function render() {
         layoutBoard();
-        renderRooms();
-        renderDecors();
-        renderTransitions();
+        const now = Date.now();
         const floor = Store.currentFloor();
+        const feed = floor && Store.isPlayerView()
+            ? cameraFeedSnapshot(floor.id, now) : null;
+        lastCameraFeedSignature = feed ? feed.signature : '';
+        renderRooms();
+        renderDecors(now, feed);
+        renderTransitions(now, feed);
         walls = floor ? computeOccluders(floor.id, 'optical') : [];
-        renderEntities(); // appelle renderOverlay()
+        renderEntities(now, feed); // appelle renderOverlay()
         renderTokens();
         const wrapper = document.getElementById('map-wrapper');
         const tool = Store.ui.activeTool;
@@ -813,6 +951,29 @@ const MapView = (() => {
             + (tool.startsWith('transition:') ? ' tool-transition' : '')
             + (EntityCatalog.types[tool] ? ' tool-place' : '')
             + (tool.startsWith('decor:') ? ' tool-decor' : '');
+    }
+
+    /* Appelé par la boucle d'animation : ne reconstruit les couches que
+       lorsqu'un élément entre ou sort réellement d'un flux caméra. */
+    function updateCameraFeedVisibility(now) {
+        const floor = Store.currentFloor();
+        const snapshot = floor && Store.isPlayerView()
+            ? cameraFeedSnapshot(floor.id, now) : null;
+        const signature = snapshot ? snapshot.signature : '';
+        if (signature === lastCameraFeedSignature) return false;
+        lastCameraFeedSignature = signature;
+        const previousFloorId = floor && floor.id;
+        Store.ensureVisibleView();
+        const currentFloor = Store.currentFloor();
+        if (!currentFloor || currentFloor.id !== previousFloorId) {
+            render();
+            return true;
+        }
+        renderRooms();
+        renderDecors(now, snapshot);
+        renderTransitions(now, snapshot);
+        renderEntities(now, snapshot);
+        return true;
     }
 
     function focusElement(kind, id) {
@@ -846,6 +1007,8 @@ const MapView = (() => {
         moveTransitionEndpointDiv, updateSelectionClasses, setEntityScreenPos,
         conePolygon, beamPolygon, rectanglePolygon, thresholdPolygon,
         computeOccluders, invalidateOccluders, isLineBlocked,
+        pointInPolygon, cameraFeedSnapshot, isCameraFeedVisible,
+        updateCameraFeedVisibility,
         focusElement,
         getOccluderCacheStats: () => ({ entries: occluderCache.size, builds: occluderBuilds }),
         getWalls: () => walls

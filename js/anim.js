@@ -108,7 +108,7 @@ const Anim = (() => {
 
     /* --- Boucle requestAnimationFrame --- */
     let rafId = null;
-    let lastConeAt = 0;
+    let lastVisualAt = 0;
 
     function tick() {
         const now = Date.now();
@@ -129,9 +129,10 @@ const Anim = (() => {
                 }
             });
             if (moved) MapView.renderCables(now);
-            if (needCoverages && now - lastConeAt > 33) { // ~30 fps pour le rendu
-                MapView.renderCoverages(now);
-                lastConeAt = now;
+            if ((moved || needCoverages) && now - lastVisualAt > 33) { // ~30 fps pour le rendu
+                const feedChanged = MapView.updateCameraFeedVisibility(now);
+                if (needCoverages && !feedChanged) MapView.renderCoverages(now);
+                lastVisualAt = now;
             }
         }
         rafId = requestAnimationFrame(tick);

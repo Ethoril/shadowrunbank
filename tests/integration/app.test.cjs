@@ -355,6 +355,51 @@ test('l’arbre distingue une découverte automatique d’une révélation MJ', 
     await context.close();
 });
 
+test('une caméra piratée affiche un flux limité à son cône dans la vue joueurs', async () => {
+    const context = await browser.newContext();
+    await context.route('**/js/cloud.js*', route => route.abort());
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html');
+    const ids = await page.evaluate(() => {
+        const floor = Store.sortedFloors()[1];
+        const room = Store.roomAt(floor.id, 5, 7);
+        const node = Store.addEntity('network_node', floor.id, 3, 7, 'Nœud du flux');
+        node.state = 'hacked';
+        const camera = Store.addEntity('camera', floor.id, 5, 7, 'Caméra du flux');
+        camera.networkId = node.id;
+        camera.coverage.direction = 0;
+        const inside = Store.addEntity('armed_guard', floor.id, 8, 7, 'Dans le flux');
+        const outside = Store.addEntity('armed_guard', floor.id, 5, 9.5, 'Hors du flux');
+        const decor = Store.addDecor('floor_marking', floor.id, 9, 7);
+        const transition = Store.addTransition('stairs', 'Escalier dans le flux');
+        Store.addTransitionEndpoint(transition, floor.id, 10, 7);
+        Store.ui.preview = true;
+        Store.ui.currentFloorId = floor.id;
+        App.renderAll();
+        return {
+            floor: floor.id, room: room.id, node: node.id, camera: camera.id,
+            inside: inside.id, outside: outside.id, decor: decor.id,
+            transition: transition.id
+        };
+    });
+
+    assert.equal(await page.evaluate(() => Store.currentFloor().id), ids.floor);
+    assert.equal(await page.locator(`.room-label[data-room-id="${ids.room}"]`).count(), 1);
+    assert.equal(await page.locator(`.entity[data-id="${ids.camera}"]`).count(), 0);
+    assert.equal(await page.locator(`.entity[data-id="${ids.inside}"]`).count(), 1);
+    assert.equal(await page.locator(`.entity[data-id="${ids.outside}"]`).count(), 0);
+    assert.equal(await page.locator(`.decor[data-id="${ids.decor}"]`).count(), 1);
+    assert.equal(await page.locator(`.transition-endpoint[data-transition-id="${ids.transition}"]`).count(), 1);
+
+    await page.evaluate(nodeId => {
+        Store.findEntity(nodeId).state = 'active';
+        App.renderAll();
+    }, ids.node);
+    assert.notEqual(await page.evaluate(() => Store.currentFloor().id), ids.floor);
+    assert.equal(await page.locator(`.entity[data-id="${ids.inside}"]`).count(), 0);
+    await context.close();
+});
+
 test('les couches transparentes laissent sélectionner et déplacer les éléments', async () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     await context.route('**/js/cloud.js*', route => route.abort());

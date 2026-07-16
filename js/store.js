@@ -964,8 +964,30 @@ const Store = (() => {
         return discoveries.some(discovery => discovery.id === key
             || (discovery.kind === kind && discovery.elementId === elementId));
     }
+
+    /* Une caméra piratée fournit un flux temporaire aux joueurs. Le nœud
+       réseau est pris en compte via getEffectiveState, comme pour le rendu. */
+    function cameraFeedCameras(floorId) {
+        if (!plan) return [];
+        return plan.entities.filter(ent => ent.floorId === floorId
+            && ent.type === 'camera'
+            && ent.coverage && ent.coverage.shape === 'cone'
+            && getEffectiveState(ent) === 'hacked');
+    }
+
+    function isCameraFeedRevealed(item, kind) {
+        if (!item) return false;
+        if (kind === 'floor') return cameraFeedCameras(item.id).length > 0;
+        if (kind === 'room') {
+            return cameraFeedCameras(item.floorId).some(camera =>
+                roomAt(camera.floorId, Math.floor(camera.x), Math.floor(camera.y)) === item);
+        }
+        return false;
+    }
+
     function isEffectivelyRevealed(item, kind) {
-        return !!(item && (item.revealed || isDiscovered(kind, item.id)));
+        return !!(item && (item.revealed || isDiscovered(kind, item.id)
+            || (isPlayerView() && isCameraFeedRevealed(item, kind))));
     }
     function persistDiscoveries() {
         try { localStorage.setItem(DISCOVERIES_KEY, JSON.stringify(discoveries)); }
@@ -1078,13 +1100,19 @@ const Store = (() => {
         if (!isPlayerView() || !ui.selection) return;
         const sel = ui.selection;
         let visible = false;
-        if (sel.kind === 'entity') { const e = findEntity(sel.id); visible = isEffectivelyRevealed(e, 'entity'); }
+        if (sel.kind === 'entity') { const e = findEntity(sel.id); visible = isEffectivelyRevealed(e, 'entity') || isCameraFeedVisible(e, 'entity'); }
         else if (sel.kind === 'room') { const r = findRoom(sel.id); visible = isEffectivelyRevealed(r, 'room'); }
-        else if (sel.kind === 'decor') { const d = findDecor(sel.id); visible = isEffectivelyRevealed(d, 'decor'); }
+        else if (sel.kind === 'decor') { const d = findDecor(sel.id); visible = isEffectivelyRevealed(d, 'decor') || isCameraFeedVisible(d, 'decor'); }
         else if (sel.kind === 'floor') { const f = findFloor(sel.id); visible = isEffectivelyRevealed(f, 'floor'); }
         else if (sel.kind === 'token') { const token = findToken(sel.id); visible = !!(token && token.visible); }
-        else if (sel.kind === 'transition') { const transition = findTransition(sel.id); visible = isEffectivelyRevealed(transition, 'transition'); }
+        else if (sel.kind === 'transition') { const transition = findTransition(sel.id); visible = isEffectivelyRevealed(transition, 'transition') || isCameraFeedVisible(transition, 'transition'); }
         if (!visible) ui.selection = null;
+    }
+
+    function isCameraFeedVisible(item, kind) {
+        return !!(item && typeof MapView !== 'undefined'
+            && typeof MapView.isCameraFeedVisible === 'function'
+            && MapView.isCameraFeedVisible(item, kind, Date.now()));
     }
 
     /* --- Mutations : étages --- */
@@ -1493,6 +1521,7 @@ const Store = (() => {
         findEntity, findRoom, findDecor, findFloor, findToken, findTransition,
         getEffectiveState, setEntityState,
         isPlayerView, isDiscovered, isEffectivelyRevealed,
+        cameraFeedCameras, isCameraFeedRevealed,
         visibleFloors, visibleRooms, visibleEntities, visibleDecors, visibleTokens, visibleTransitions,
         ensureVisibleView,
         applyRemoteTokens, saveToken, commitTokenPosition, addToken, duplicateToken, deleteToken,
