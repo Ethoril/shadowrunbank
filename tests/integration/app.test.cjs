@@ -18,6 +18,8 @@ let server;
 let baseUrl;
 let browser;
 let remotePlan;
+let remoteTokens = [];
+let remoteDiscoveries = [];
 
 function readBody(request) {
     return new Promise((resolve, reject) => {
@@ -55,6 +57,55 @@ async function handleRequest(request, response) {
         return;
     }
 
+    if (url.pathname === '/__test-cloud/tokens') {
+        response.setHeader('Content-Type', 'application/json');
+        if (request.method === 'GET') {
+            response.end(JSON.stringify(remoteTokens));
+            return;
+        }
+        if (request.method === 'POST') {
+            const token = JSON.parse(await readBody(request));
+            const previous = remoteTokens.find(item => item.id === token.id) || {};
+            remoteTokens = remoteTokens.filter(item => item.id !== token.id)
+                .concat({ ...previous, ...token });
+            response.end('{}');
+            return;
+        }
+        if (request.method === 'DELETE') {
+            const { id } = JSON.parse(await readBody(request));
+            remoteTokens = remoteTokens.filter(item => item.id !== id);
+            response.end('{}');
+            return;
+        }
+        response.statusCode = 405;
+        response.end('{}');
+        return;
+    }
+
+    if (url.pathname === '/__test-cloud/discoveries') {
+        response.setHeader('Content-Type', 'application/json');
+        if (request.method === 'GET') {
+            response.end(JSON.stringify(remoteDiscoveries));
+            return;
+        }
+        if (request.method === 'POST') {
+            const discovery = JSON.parse(await readBody(request));
+            remoteDiscoveries = remoteDiscoveries
+                .filter(item => item.id !== discovery.id).concat(discovery);
+            response.end('{}');
+            return;
+        }
+        if (request.method === 'DELETE') {
+            const { ids } = JSON.parse(await readBody(request));
+            remoteDiscoveries = remoteDiscoveries.filter(item => !ids.includes(item.id));
+            response.end('{}');
+            return;
+        }
+        response.statusCode = 405;
+        response.end('{}');
+        return;
+    }
+
     const requested = url.pathname === '/' ? '/index.html' : url.pathname;
     const filename = path.resolve(ROOT, '.' + requested);
     if (!filename.startsWith(ROOT + path.sep) || !fs.existsSync(filename) || !fs.statSync(filename).isFile()) {
@@ -69,13 +120,38 @@ async function handleRequest(request, response) {
 function mockCloudScript() {
     window.Cloud = (() => {
         const channel = new BroadcastChannel('shadowrunbank-test-cloud');
-        const listeners = new Set();
-        const notify = async () => {
+        const planListeners = new Set();
+        const tokenListeners = new Set();
+        const discoveryListeners = new Set();
+        const notifyPlan = async () => {
             const response = await fetch('/__test-cloud/plan');
             const plan = await response.json();
-            listeners.forEach(listener => listener(plan, false));
+            planListeners.forEach(listener => listener(plan, false));
         };
-        channel.addEventListener('message', notify);
+        const notifyTokens = async () => {
+            const response = await fetch('/__test-cloud/tokens');
+            const tokens = await response.json();
+            tokenListeners.forEach(listener => listener(tokens, false));
+        };
+        const notifyDiscoveries = async () => {
+            const response = await fetch('/__test-cloud/discoveries');
+            const discoveries = await response.json();
+            discoveryListeners.forEach(listener => listener(discoveries, false));
+        };
+        channel.addEventListener('message', event => {
+            if (event.data === 'tokens-updated') notifyTokens();
+            else if (event.data === 'discoveries-updated') notifyDiscoveries();
+            else notifyPlan();
+        });
+        async function writeCollection(path, value, message) {
+            await fetch(path, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(value)
+            });
+            channel.postMessage(message);
+            return {};
+        }
         return {
             ADMIN_EMAIL: 'admin@example.test',
             isAdmin: user => !!user && user.email === 'admin@example.test',
@@ -103,17 +179,48 @@ function mockCloudScript() {
                 return result;
             },
             subscribePlan(callback, onError) {
-                listeners.add(callback);
-                notify().catch(onError);
-                return () => listeners.delete(callback);
+                planListeners.add(callback);
+                notifyPlan().catch(onError);
+                return () => planListeners.delete(callback);
             },
-            subscribeTokens(callback) { queueMicrotask(() => callback([], false)); return () => {}; },
-            subscribeDiscoveries(callback) { queueMicrotask(() => callback([], false)); return () => {}; },
-            saveToken: async () => ({}),
-            updateTokenPosition: async () => ({}),
-            deleteToken: async () => ({}),
-            saveDiscovery: async () => ({}),
-            deleteDiscoveries: async () => ({}),
+            subscribeTokens(callback, onError) {
+                tokenListeners.add(callback);
+                notifyTokens().catch(onError);
+                return () => tokenListeners.delete(callback);
+            },
+            subscribeDiscoveries(callback, onError) {
+                discoveryListeners.add(callback);
+                notifyDiscoveries().catch(onError);
+                return () => discoveryListeners.delete(callback);
+            },
+            saveToken(token) {
+                return writeCollection('/__test-cloud/tokens', token, 'tokens-updated');
+            },
+            updateTokenPosition(position) {
+                return writeCollection('/__test-cloud/tokens', position, 'tokens-updated');
+            },
+            async deleteToken(id) {
+                await fetch('/__test-cloud/tokens', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
+                });
+                channel.postMessage('tokens-updated');
+                return {};
+            },
+            saveDiscovery(discovery) {
+                return writeCollection(
+                    '/__test-cloud/discoveries', discovery, 'discoveries-updated');
+            },
+            async deleteDiscoveries(ids) {
+                await fetch('/__test-cloud/discoveries', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids })
+                });
+                channel.postMessage('discoveries-updated');
+                return {};
+            },
             createSnapshot: async () => ({ id: 'snapshot-test' }),
             listSnapshots: async () => [],
             deleteSnapshot: async () => ({})
@@ -311,6 +418,115 @@ test('les couches transparentes laissent sélectionner et déplacer les élémen
         return { x: token.x, y: token.y };
     }, ids.token);
     assert.notDeepEqual(playerAfter, playerBefore);
+    await context.close();
+});
+
+test('les poignées règlent directement faisceaux, zones et seuils', async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await context.route('**/js/cloud.js*', route => route.abort());
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html');
+
+    const ids = await page.evaluate(() => {
+        const floor = Store.currentFloor();
+        const laser = Store.addEntity('detection_laser', floor.id, 5, 5, 'Laser réglable');
+        Object.assign(laser.coverage, { direction: 0, range: 3, width: 0.5, sweep: null });
+        const circle = Store.addEntity('security_mage', floor.id, 14, 5, 'Zone astrale');
+        circle.coverage.radius = 2;
+        const threshold = Store.addEntity('mad_gate', floor.id, 10, 10, 'Seuil orientable');
+        Object.assign(threshold.coverage, { direction: 0, range: 1, width: 2, sweep: null });
+        const cone = Store.addEntity('camera', floor.id, 1, 1, 'Cône réglable au bord');
+        Object.assign(cone.coverage, { direction: -135, range: 10, angle: 60, sweep: null });
+        Store.ui.selection = { kind: 'entity', id: laser.id };
+        App.renderAll();
+        return { laser: laser.id, circle: circle.id, threshold: threshold.id, cone: cone.id };
+    });
+
+    async function dragHandle(selector, gridX, gridY) {
+        const handle = page.locator(selector);
+        const box = await handle.boundingBox();
+        assert.ok(box, selector + ' sans géométrie');
+        const target = await page.evaluate(({ x, y }) => {
+            const board = document.querySelector('#board').getBoundingClientRect();
+            const grid = Store.getPlan().grid;
+            return {
+                x: board.left + x * board.width / grid.cols,
+                y: board.top + y * board.height / grid.rows
+            };
+        }, { x: gridX, y: gridY });
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(target.x, target.y, { steps: 6 });
+        await page.mouse.up();
+    }
+
+    const laserAxis = `#g-coverage-handles .coverage-handle-axis[data-entity-id="${ids.laser}"]`;
+    const laserWidth = `#g-coverage-handles .coverage-handle-width[data-entity-id="${ids.laser}"]`;
+    assert.equal(await page.locator(laserAxis).count(), 1);
+    assert.equal(await page.locator(laserWidth).count(), 1);
+    await dragHandle(laserAxis, 9, 5);
+    await dragHandle(laserWidth, 7, 6);
+    let coverage = await page.evaluate(id => ({ ...Store.findEntity(id).coverage }), ids.laser);
+    assert.equal(coverage.direction, 0);
+    assert.equal(coverage.range, 4);
+    assert.equal(coverage.width, 2);
+    await page.locator('#undo-btn').click();
+    coverage = await page.evaluate(id => ({ ...Store.findEntity(id).coverage }), ids.laser);
+    assert.equal(coverage.range, 4);
+    assert.equal(coverage.width, 0.5);
+    await page.locator('#redo-btn').click();
+    coverage = await page.evaluate(id => ({ ...Store.findEntity(id).coverage }), ids.laser);
+    assert.equal(coverage.width, 2);
+
+    await page.evaluate(id => {
+        Store.ui.selection = { kind: 'entity', id };
+        MapView.renderCoverageHandles(Date.now());
+    }, ids.circle);
+    const radius = `#g-coverage-handles .coverage-handle-radius[data-entity-id="${ids.circle}"]`;
+    assert.equal(await page.locator(radius).count(), 1);
+    await dragHandle(radius, 17.5, 5);
+    coverage = await page.evaluate(id => ({ ...Store.findEntity(id).coverage }), ids.circle);
+    assert.equal(coverage.radius, 3.5);
+
+    await page.evaluate(id => {
+        Store.ui.selection = { kind: 'entity', id };
+        MapView.renderCoverageHandles(Date.now());
+    }, ids.threshold);
+    const thresholdAxis = `#g-coverage-handles .coverage-handle-axis[data-entity-id="${ids.threshold}"]`;
+    const thresholdWidth = `#g-coverage-handles .coverage-handle-width[data-entity-id="${ids.threshold}"]`;
+    assert.equal(await page.locator(thresholdAxis).count(), 1);
+    assert.equal(await page.locator(thresholdWidth).count(), 1);
+    await dragHandle(thresholdAxis, 11.5, 11.5);
+    coverage = await page.evaluate(id => ({ ...Store.findEntity(id).coverage }), ids.threshold);
+    assert.equal(coverage.direction, 45);
+    assert.equal(coverage.range, 4);
+
+    const coneHandles = await page.evaluate(id => {
+        Store.ui.selection = { kind: 'entity', id };
+        MapView.renderCoverageHandles(Date.now());
+        return [...document.querySelectorAll('#g-coverage-handles .coverage-handle')]
+            .map(handle => handle.dataset.handle).sort();
+    }, ids.cone);
+    assert.deepEqual(coneHandles, ['angle', 'axis']);
+    const coneBounds = await page.evaluate(() => {
+        const board = document.querySelector('#board').getBoundingClientRect();
+        const handles = [...document.querySelectorAll('#g-coverage-handles .coverage-handle')]
+            .map(handle => handle.getBoundingClientRect());
+        return handles.map(handle => ({
+            left: handle.left - board.left,
+            top: handle.top - board.top,
+            right: board.right - handle.right,
+            bottom: board.bottom - handle.bottom
+        }));
+    });
+    assert.ok(coneBounds.every(bounds => Object.values(bounds).every(value => value >= -0.5)),
+        JSON.stringify(coneBounds));
+
+    assert.equal(await page.evaluate(() => {
+        Store.ui.readOnly = true;
+        App.renderAll();
+        return document.querySelectorAll('#g-coverage-handles .coverage-handle').length;
+    }), 0);
     await context.close();
 });
 
@@ -611,6 +827,56 @@ test('les deux orientations de la tablette cible restent sans débordement', asy
     assert.equal(metrics.overflow, 0);
     assert.ok(metrics.mapWidth > 740);
     assert.ok(metrics.mapHeight > 850);
+    await context.close();
+});
+
+test('deux écrans synchronisent la position d’un pion et les découvertes', async () => {
+    remotePlan = JSON.parse(fs.readFileSync(
+        path.join(ROOT, 'tests/fixtures/plan-v1-production.json'), 'utf8'));
+    remotePlan.revision = 0;
+    remoteTokens = [{
+        id: 'token-sync', name: 'Runner synchronisé', shortLabel: 'RS',
+        color: '#00d2ff', icon: 'runner', floorId: 'f_mrjazc0tos95t',
+        x: 2.5, y: 2.5, playerMovable: true, visible: true, locked: false,
+        updatedAt: Date.now()
+    }];
+    remoteDiscoveries = [];
+
+    const context = await browser.newContext();
+    await context.route('**/js/cloud.js*', route => route.abort());
+    await context.addInitScript(mockCloudScript);
+    const first = await context.newPage();
+    const second = await context.newPage();
+    await Promise.all([
+        first.goto(baseUrl + '/index.html'),
+        second.goto(baseUrl + '/index.html')
+    ]);
+    await Promise.all([
+        first.waitForFunction(() => Store.ui.readOnly && !!Store.findToken('token-sync')),
+        second.waitForFunction(() => Store.ui.readOnly && !!Store.findToken('token-sync'))
+    ]);
+
+    await first.evaluate(async () => {
+        const token = Store.findToken('token-sync');
+        token.x = 8.5;
+        token.y = 6.5;
+        await Store.commitTokenPosition(token);
+    });
+    await second.waitForFunction(() => {
+        const token = Store.findToken('token-sync');
+        return token && token.x === 8.5 && token.y === 6.5;
+    });
+    const syncedToken = await second.evaluate(() => ({ ...Store.findToken('token-sync') }));
+    assert.equal(syncedToken.name, 'Runner synchronisé');
+    assert.equal(syncedToken.playerMovable, true);
+
+    const discoveredId = await first.evaluate(() => {
+        const entity = Store.floorEntities('f_mrjazc0tos95t')[0];
+        Store.addDiscovery('entity', entity, 'token-sync', entity.floorId);
+        return entity.id;
+    });
+    await second.waitForFunction(id => Store.isDiscovered('entity', id), discoveredId);
+    assert.equal(await second.evaluate(id => Store.isDiscovered('entity', id), discoveredId), true);
     await context.close();
 });
 

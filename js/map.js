@@ -425,7 +425,7 @@ const MapView = (() => {
     function renderOverlay() {
         const svg = document.getElementById('overlay-svg');
         svg.innerHTML = '';
-        ['g-coverages', 'g-patrols', 'g-cables'].forEach(id => {
+        ['g-coverages', 'g-coverage-handles', 'g-patrols', 'g-cables'].forEach(id => {
             const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             g.id = id;
             svg.appendChild(g);
@@ -493,9 +493,108 @@ const MapView = (() => {
             if (hidden) shape.setAttribute('stroke-dasharray', '4 4');
             g.appendChild(shape);
         });
+
+        renderCoverageHandles(now);
     }
 
     const renderCones = renderCoverages;
+
+    function coverageHandlePoint(ent, distance, direction) {
+        const radians = direction * Math.PI / 180;
+        return {
+            x: ent.x + Math.cos(radians) * distance,
+            y: ent.y + Math.sin(radians) * distance
+        };
+    }
+
+    function constrainCoverageHandlePoint(point) {
+        const grid = Store.getPlan().grid;
+        const margin = 22 / cellPx;
+        return {
+            x: Math.min(grid.cols - margin, Math.max(margin, point.x)),
+            y: Math.min(grid.rows - margin, Math.max(margin, point.y))
+        };
+    }
+
+    function appendCoverageHandle(group, ent, handle, point, origin, label, value) {
+        const visiblePoint = constrainCoverageHandlePoint(point);
+        const visibleOrigin = constrainCoverageHandlePoint(origin);
+        const guide = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        guide.classList.add('coverage-handle-guide');
+        guide.setAttribute('x1', visibleOrigin.x * cellPx);
+        guide.setAttribute('y1', visibleOrigin.y * cellPx);
+        guide.setAttribute('x2', visiblePoint.x * cellPx);
+        guide.setAttribute('y2', visiblePoint.y * cellPx);
+        group.appendChild(guide);
+
+        const control = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        control.classList.add('coverage-handle', 'coverage-handle-' + handle);
+        control.dataset.entityId = ent.id;
+        control.dataset.handle = handle;
+        control.setAttribute('transform', `translate(${visiblePoint.x * cellPx} ${visiblePoint.y * cellPx})`);
+        control.setAttribute('role', 'slider');
+        control.setAttribute('aria-label', label);
+        control.setAttribute('aria-valuetext', String(value));
+
+        const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        title.textContent = label + ' : ' + value;
+        const hitArea = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        hitArea.classList.add('coverage-handle-hit');
+        hitArea.setAttribute('r', '22');
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.classList.add('coverage-handle-dot');
+        dot.setAttribute('r', '6');
+        control.append(title, hitArea, dot);
+        control.addEventListener('pointerdown', event =>
+            Editor.onCoverageHandlePointerDown(event, ent.id, handle));
+        group.appendChild(control);
+    }
+
+    /* Poignées d'édition de la couverture sélectionnée. Elles n'existent qu'en
+       mode MJ et restent indépendantes du polygone afin de conserver une cible
+       tactile confortable, même pour un laser très fin. */
+    function renderCoverageHandles(now) {
+        const group = svgGroup('g-coverage-handles');
+        if (!group) return;
+        group.innerHTML = '';
+        if (Store.isPlayerView() || Store.ui.activeTool !== 'select') return;
+        const selection = Store.ui.selection;
+        if (!selection || selection.kind !== 'entity') return;
+        const ent = Store.findEntity(selection.id);
+        const floor = Store.currentFloor();
+        if (!ent || !ent.coverage || !floor || ent.floorId !== floor.id) return;
+
+        const coverage = ent.coverage;
+        const at = now === undefined ? Date.now() : now;
+        const direction = Anim.sweepDirection(coverage, at);
+        const origin = Anim.effectivePos(ent, at);
+        if (coverage.shape === 'circle') {
+            appendCoverageHandle(group, ent, 'radius',
+                coverageHandlePoint(origin, coverage.radius, 0), origin,
+                'Rayon de la zone', coverage.radius + ' cases');
+            return;
+        }
+
+        const axisDistance = coverage.shape === 'threshold' ? coverage.range / 2 : coverage.range;
+        appendCoverageHandle(group, ent, 'axis',
+            coverageHandlePoint(origin, axisDistance, direction), origin,
+            coverage.shape === 'threshold' ? 'Orientation et profondeur' : 'Orientation et portée',
+            coverage.range + ' cases · ' + Math.round(direction) + '°');
+
+        if (['beam', 'rectangle', 'threshold'].includes(coverage.shape)) {
+            const forward = coverage.shape === 'threshold' ? 0 : coverage.range / 2;
+            const widthOrigin = coverageHandlePoint(origin, forward, direction);
+            appendCoverageHandle(group, ent, 'width',
+                coverageHandlePoint(widthOrigin, coverage.width / 2, direction + 90), widthOrigin,
+                'Largeur de la zone', coverage.width + ' cases');
+        }
+
+        if (coverage.shape === 'cone') {
+            appendCoverageHandle(group, ent, 'angle',
+                coverageHandlePoint(origin, coverage.range, direction - coverage.angle / 2), origin,
+                'Ouverture du cône', coverage.angle + '°');
+        }
+    }
 
     /* Chemins de ronde : polyligne pointillée + waypoints */
     function renderPatrols() {
@@ -657,6 +756,7 @@ const MapView = (() => {
                 && selection.kind === 'transition'
                 && selection.id === element.dataset.transitionId);
         });
+        renderCoverageHandles(Date.now());
     }
 
     function render() {
@@ -705,7 +805,8 @@ const MapView = (() => {
 
     return {
         catalog, render, renderDecors, renderTransitions, renderTokens,
-        renderEntities, renderOverlay, renderCoverages, renderCones, renderPatrols, renderCables,
+        renderEntities, renderOverlay, renderCoverages, renderCoverageHandles,
+        renderCones, renderPatrols, renderCables,
         gridPosFromEvent, cellFromEvent, moveEntityDiv, moveDecorDiv, moveTokenDiv,
         moveTransitionEndpointDiv, updateSelectionClasses, setEntityScreenPos,
         conePolygon, beamPolygon, rectanglePolygon, thresholdPolygon,

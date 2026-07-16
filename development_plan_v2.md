@@ -845,7 +845,7 @@ la carte reste exploitable, et les scénarios MJ/joueur passent sur tous les vie
 - [x] Palette catégorisée
 - [x] Placement des décors
 - [x] Rotation et redimensionnement
-- [ ] Outils de zones et faisceaux
+- [x] Outils de zones et faisceaux avec poignées directes sur la carte
 - [x] Outil de création des transitions
 - [x] Création et configuration des pions
 - [x] Édition des waypoints
@@ -1031,6 +1031,7 @@ Durée indicative : 2 à 3 jours.
 - [x] Copier/coller entre étages
 - [x] Gestion et restauration des 15 dernières versions
 - [x] Réinitialisation des couvertures
+- [x] Poignées de portée, orientation, largeur, rayon et ouverture des couvertures
 - [x] Focalisation depuis l'arbre Visibilité
 - [x] Waypoints éditables
 - [x] Palette repliable
@@ -1118,7 +1119,7 @@ niveau de finition graphique des décors et des nouveaux dispositifs.
 - [x] Création, modification et suppression d'un pion par le MJ
 - [x] Déplacement tactile autorisé
 - [x] Déplacement refusé quand le pion est verrouillé
-- [ ] Synchronisation sur deux écrans
+- [x] Synchronisation sur deux écrans
 - [x] Écriture limitée aux coordonnées
 - [x] Escalier bidirectionnel
 - [x] Passage à sens unique
@@ -1133,7 +1134,7 @@ niveau de finition graphique des décors et des nouveaux dispositifs.
 - [x] Élément occulté restant caché
 - [x] Élément avec **autoDiscover: false** restant caché
 - [x] Cône et ronde restant indépendants de la découverte
-- [ ] Découverte synchronisée sur deux écrans
+- [x] Découverte synchronisée sur deux écrans
 
 ## 15.6 Catalogue
 
@@ -1239,3 +1240,4 @@ cas particuliers et gardera le projet simple à maintenir.
 | 2026-07-15 | Phase 6 | Pions PJ, transitions multi-étages, exploration et découvertes persistantes | À renseigner |
 | 2026-07-15 | Phase 7 | Historique, duplication, waypoints éditables et interfaces tablette | À renseigner |
 | 2026-07-15 | Phase 8 | Tests unitaires/intégration, snapshot et workflows CI/déploiement manuel préparés | À renseigner |
+| 2026-07-16 | Phases 7 / 8 | Poignées de couverture sur la carte et synchronisation pions/découvertes testée entre deux écrans | À renseigner |
