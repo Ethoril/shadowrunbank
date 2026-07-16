@@ -118,6 +118,17 @@ async function handleRequest(request, response) {
 }
 
 function mockCloudScript() {
+    if (location.search.includes('stale-local=1')) {
+        localStorage.setItem('shadowrunbank_tokens_v1', JSON.stringify([{
+            id: 'token-stale', name: 'Runner local périmé', shortLabel: 'RS',
+            color: '#00d2ff', icon: 'runner', floorId: 'f_mrjazc0tos95t',
+            x: 2.5, y: 2.5, playerMovable: true, visible: true, locked: false
+        }]));
+        localStorage.setItem('shadowrunbank_discoveries_v1', JSON.stringify([{
+            id: 'room-stale', kind: 'room', elementId: 'r_mrjazc0tjak55',
+            floorId: 'f_mrjazc0tos95t', discoveredBy: 'token-stale'
+        }]));
+    }
     window.Cloud = (() => {
         const channel = new BroadcastChannel('shadowrunbank-test-cloud');
         const planListeners = new Set();
@@ -913,6 +924,29 @@ test('supprimer les dernières données ne relance pas leur migration', async ()
         Store.resetDiscoveries();
     });
     await page.waitForFunction(() => Store.getTokens().length === 0
+        && Store.getDiscoveries().length === 0);
+    await page.waitForTimeout(100);
+    assert.equal(remoteTokens.length, 0);
+    assert.equal(remoteDiscoveries.length, 0);
+    await context.close();
+});
+
+test('un plan v2 vide ignore les anciennes données locales au rechargement', async () => {
+    remotePlan = JSON.parse(fs.readFileSync(
+        path.join(ROOT, 'tests/fixtures/plan-v1-production.json'), 'utf8'));
+    remotePlan.schemaVersion = 2;
+    remotePlan.revision = 9;
+    remoteTokens = [];
+    remoteDiscoveries = [];
+
+    const context = await browser.newContext();
+    await context.route('**/js/cloud.js*', route => route.abort());
+    await context.addInitScript(mockCloudScript);
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html?admin=1&stale-local=1');
+    await page.waitForFunction(() => !Store.ui.readOnly
+        && Store.getPlan().schemaVersion === 2
+        && Store.getTokens().length === 0
         && Store.getDiscoveries().length === 0);
     await page.waitForTimeout(100);
     assert.equal(remoteTokens.length, 0);
