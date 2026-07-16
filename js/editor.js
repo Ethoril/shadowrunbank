@@ -7,7 +7,7 @@
 const Editor = (() => {
 
     let paintSession = null; // { mode: 'paint'|'erase', room }
-    let dragSession = null;  // { kind: 'entity'|'decor'|'token'|'transition'|'waypoint', id, endpointId?, index?, moved }
+    let dragSession = null;  // déplacement d'élément, waypoint ou poignée de couverture
     let clipboard = null;    // { kind: 'entity'|'decor', data } — non persisté
 
     /* --- Outils --- */
@@ -219,6 +219,61 @@ const Editor = (() => {
         };
     }
 
+    function clamp(value, min, max) {
+        return Math.min(max, Math.max(min, value));
+    }
+
+    function snapCoverageValue(value, step, min, max) {
+        return clamp(Math.round(value / step) * step, min, max);
+    }
+
+    function normalizeAngle(angle) {
+        let normalized = angle % 360;
+        if (normalized > 180) normalized -= 360;
+        if (normalized <= -180) normalized += 360;
+        return normalized;
+    }
+
+    function updateCoverageFromPointer(session, pos) {
+        const ent = Store.findEntity(session.id);
+        const coverage = ent && ent.coverage;
+        if (!coverage) return false;
+        let stoppedPatrol = false;
+        if (session.hadMovingPatrol) {
+            Store.stopPatrol(ent);
+            session.hadMovingPatrol = false;
+            stoppedPatrol = true;
+        }
+        const before = JSON.stringify(coverage);
+        const dx = pos.x - ent.x;
+        const dy = pos.y - ent.y;
+        const distance = Math.hypot(dx, dy);
+
+        if (session.hadSweep) {
+            coverage.direction = session.frozenDirection;
+            coverage.sweep = null;
+        }
+
+        if (session.handle === 'axis') {
+            coverage.direction = snapCoverageValue(
+                normalizeAngle(Math.atan2(dy, dx) * 180 / Math.PI), 5, -180, 180);
+            const range = coverage.shape === 'threshold' ? distance * 2 : distance;
+            coverage.range = snapCoverageValue(range, 0.5, 0.5, 30);
+        } else if (session.handle === 'width') {
+            const radians = coverage.direction * Math.PI / 180;
+            const perpendicular = -Math.sin(radians) * dx + Math.cos(radians) * dy;
+            coverage.width = snapCoverageValue(Math.abs(perpendicular) * 2, 0.25, 0.25, 20);
+        } else if (session.handle === 'radius') {
+            coverage.radius = snapCoverageValue(distance, 0.5, 0.5, 30);
+        } else if (session.handle === 'angle') {
+            const pointerDirection = Math.atan2(dy, dx) * 180 / Math.PI;
+            const delta = Math.abs(normalizeAngle(pointerDirection - coverage.direction));
+            coverage.angle = snapCoverageValue(delta * 2, 5, 10, 180);
+        }
+
+        return stoppedPatrol || JSON.stringify(coverage) !== before;
+    }
+
     function onBoardPointerDown(e) {
         const tool = Store.ui.activeTool;
         const floor = Store.currentFloor();
@@ -398,6 +453,10 @@ const Editor = (() => {
                 point.y = snapCoord(Math.min(Math.max(pos.y, 0), grid.rows));
                 dragSession.moved = true;
                 MapView.renderPatrols();
+            } else if (dragSession.kind === 'coverage') {
+                const changed = updateCoverageFromPointer(dragSession, pos);
+                dragSession.moved = dragSession.moved || changed;
+                if (changed) MapView.renderCoverages(Date.now());
             }
         }
     }
@@ -418,9 +477,13 @@ const Editor = (() => {
                     if (!changedFloor) MapView.render();
                 }
             } else if (completed.moved) {
-                Store.touch(completed.kind === 'waypoint' ? 'Déplacer un waypoint' : 'Déplacer un élément');
+                const label = completed.kind === 'waypoint' ? 'Déplacer un waypoint'
+                    : completed.kind === 'coverage' ? 'Ajuster une zone de couverture'
+                    : 'Déplacer un élément';
+                Store.touch(label);
                 Store.endTransaction();
                 MapView.render();
+                if (completed.kind === 'coverage') Inspector.render();
             } else if (completed.kind !== 'token') {
                 Store.endTransaction();
             }
@@ -499,6 +562,26 @@ const Editor = (() => {
         dragSession = { kind: 'waypoint', id: entityId, index, moved: false };
         capturePointer(e);
         Inspector.render();
+    }
+
+    function onCoverageHandlePointerDown(e, entityId, handle) {
+        if (Store.isPlayerView() || Store.ui.activeTool !== 'select') return;
+        const ent = Store.findEntity(entityId);
+        if (!ent || !ent.coverage || !['axis', 'width', 'radius', 'angle'].includes(handle)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        Store.ui.selection = { kind: 'entity', id: entityId };
+        Store.beginTransaction('Ajuster une zone de couverture');
+        dragSession = {
+            kind: 'coverage',
+            id: entityId,
+            handle,
+            moved: false,
+            hadMovingPatrol: !!(ent.patrol && ent.patrol.moving),
+            hadSweep: !!ent.coverage.sweep,
+            frozenDirection: Anim.sweepDirection(ent.coverage, Date.now())
+        };
+        capturePointer(e);
     }
 
     function duplicateSelection() {
@@ -612,6 +695,7 @@ const Editor = (() => {
 
     return { setTool, renderTools, renderTabs, switchFloor, wireBoard, wireKeyboard,
              onEntityPointerDown, onDecorPointerDown, onTokenPointerDown, onTransitionPointerDown,
-             onWaypointPointerDown, duplicateSelection, copySelection, pasteClipboard, applyHistory,
+             onWaypointPointerDown, onCoverageHandlePointerDown,
+             duplicateSelection, copySelection, pasteClipboard, applyHistory,
              setTicker, startPatrolEdit, endPatrolEdit, startTransitionEndpoint };
 })();

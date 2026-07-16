@@ -39,7 +39,9 @@ est créée avant migration ; les sauvegardes Firestore utilisent des révisions
 et signalent explicitement les conflits entre machines.
 
 Le moteur de couverture prend en charge les cônes, faisceaux, rectangles, cercles et seuils,
-avec canal de détection, balayage et révélation indépendante.
+avec canal de détection, balayage et révélation indépendante. Une couverture sélectionnée en mode
+MJ expose directement sur la carte ses poignées de portée, orientation, largeur, rayon ou ouverture ;
+chaque geste reste annulable et les poignées demeurent accessibles au bord de la grille.
 
 La palette comprend des décors structurels, du mobilier et des éléments au sol. Leurs dimensions,
 rotation, visibilité et canaux occultés sont éditables ; les couvertures réagissent immédiatement
@@ -59,7 +61,7 @@ L'éditeur conserve les 50 dernières actions locales. Les boutons du header et 
 (peinture, glisser-déposer ou saisie). Dispositifs et décors sont duplicables ; les waypoints
 de ronde peuvent être déplacés sur la carte, supprimés, réordonnés ou inversés. `⌘/Ctrl+C` et
 `⌘/Ctrl+V` copient puis collent un dispositif ou un décor sur l'étage courant. Les couvertures
-peuvent retrouver en un clic les paramètres par défaut de leur type.
+peuvent retrouver en un clic les paramètres par défaut de leur type ou être ajustées visuellement.
 
 La mise en page est responsive sur ordinateur et tablette. Le mode MJ conserve trois colonnes sur
 MacBook, puis transforme les outils et l'inspecteur en tiroirs sur ordinateur compact ; en portrait,
