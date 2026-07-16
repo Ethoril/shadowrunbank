@@ -9,7 +9,8 @@ migration Firestore ou une publication GitHub Pages.
 2. Vérifier que le document `plans/main` exporté correspond à
    `tests/fixtures/plan-v1-production.json` ou documenter les différences récentes.
 3. Exporter `plans/main` depuis Firebase et conserver le JSON hors du dépôt.
-4. Déployer d’abord les règles `firestore.rules` ajoutant `plans/main/snapshots`.
+4. Déployer d’abord les règles `firestore.rules` ajoutant les sous-collections `tokens`,
+   `discoveries` et `snapshots` : `firebase deploy --only firestore:rules`.
 5. Ouvrir la version candidate en local, se connecter en MJ et utiliser **⛨ Snapshot**.
 6. Vérifier dans Firestore la présence du snapshot, son `sourceRevision` et son plan complet.
 
