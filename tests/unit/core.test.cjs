@@ -235,6 +235,70 @@ test('arrêter une ronde conserve la dernière orientation du mobile', () => {
     assert.ok(Math.abs(guard.x - 5) < 0.1);
 });
 
+test('une caméra piratée ouvre temporairement sa pièce et montre seulement son cône', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[1];
+    const room = Store.roomAt(floor.id, 5, 7);
+    Store.ui.preview = true;
+    Store.ui.currentFloorId = floor.id;
+
+    const camera = Store.addEntity('camera', floor.id, 5, 7, 'Caméra piratée');
+    camera.state = 'hacked';
+    camera.coverage.direction = 0;
+    const visibleGuard = Store.addEntity('armed_guard', floor.id, 8, 7, 'Garde visible');
+    const hiddenGuard = Store.addEntity('armed_guard', floor.id, 5, 9.5, 'Garde hors champ');
+    const visibleDecor = Store.addDecor('floor_marking', floor.id, 9, 7);
+    const hiddenDecor = Store.addDecor('floor_marking', floor.id, 5, 9.5);
+    const transition = Store.addTransition('stairs', 'Escalier filmé');
+    Store.addTransitionEndpoint(transition, floor.id, 10, 7);
+
+    const snapshot = MapView.cameraFeedSnapshot(floor.id, 0);
+    assert.ok(Store.isEffectivelyRevealed(floor, 'floor'));
+    assert.ok(Store.isEffectivelyRevealed(room, 'room'));
+    assert.ok(!snapshot.entityIds.includes(camera.id));
+    assert.ok(snapshot.entityIds.includes(visibleGuard.id));
+    assert.ok(!snapshot.entityIds.includes(hiddenGuard.id));
+    assert.ok(snapshot.decorIds.includes(visibleDecor.id));
+    assert.ok(!snapshot.decorIds.includes(hiddenDecor.id));
+    assert.ok(snapshot.transitionIds.includes(transition.id));
+
+    camera.state = 'active';
+    assert.ok(!Store.isEffectivelyRevealed(floor, 'floor'));
+    assert.ok(!Store.isEffectivelyRevealed(room, 'room'));
+    assert.equal(MapView.cameraFeedSnapshot(floor.id, 0).entityIds.length, 0);
+});
+
+test('le flux hérite du piratage réseau et les mobiles disparaissent en sortant du cône', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[1];
+    Store.ui.preview = true;
+    Store.ui.currentFloorId = floor.id;
+
+    const node = Store.addEntity('network_node', floor.id, 3, 7, 'Nœud piraté');
+    node.state = 'hacked';
+    const camera = Store.addEntity('camera', floor.id, 5, 7, 'Caméra liée');
+    camera.networkId = node.id;
+    camera.coverage.direction = 0;
+    const guard = Store.addEntity('armed_guard', floor.id, 7, 7, 'Garde mobile');
+    guard.patrol = {
+        points: [{ x: 7, y: 7 }, { x: 7, y: 12 }],
+        loop: false,
+        moving: true,
+        speed: 1,
+        anchorAt: 0,
+        revealed: false
+    };
+
+    assert.equal(Store.getEffectiveState(camera), 'hacked');
+    assert.ok(MapView.cameraFeedSnapshot(floor.id, 0).entityIds.includes(guard.id));
+    assert.ok(!MapView.cameraFeedSnapshot(floor.id, 4000).entityIds.includes(guard.id));
+
+    node.state = 'active';
+    assert.equal(MapView.cameraFeedSnapshot(floor.id, 0).cameraIds.length, 0);
+});
+
 test('le catalogue expose tous les dispositifs attendus', () => {
     const { EntityCatalog } = loadApplicationCore();
     const types = Object.keys(EntityCatalog.types);
