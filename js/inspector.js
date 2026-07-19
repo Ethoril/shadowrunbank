@@ -139,6 +139,8 @@ const Inspector = (() => {
             const definition = DecorCatalog.get(decor.type);
             roText('Décor :', definition.name);
             roText('Nom :', decor.name);
+            const access = Store.getAccessController(decor);
+            if (access) roText('État d’accès :', Store.isAccessOpen(decor) ? 'Ouvert' : 'Verrouillé');
             if (decor.playerInfo) roText('Info :', decor.playerInfo);
         } else if (sel.kind === 'room') {
             const room = Store.findRoom(sel.id);
@@ -207,7 +209,7 @@ const Inspector = (() => {
         });
         stateSelect.addEventListener('change', () => {
             Store.setEntityState(ent, stateSelect.value);
-            MapView.renderEntities(); // met à jour styles + cascades instantanément
+            MapView.render(); // met à jour styles, cascades et éléments contrôlés
             render();
         });
         body.appendChild(field('Statut opérationnel :', stateSelect));
@@ -557,6 +559,24 @@ const Inspector = (() => {
         }, String(((decor.rotation % 360) + 360) % 360), value => {
             decor.rotation = Number(value); fitToGrid(); refresh();
         })));
+
+        const accessOptions = { '': '[Aucun contrôle associé]' };
+        Store.floorEntities(decor.floorId).filter(Store.isDecorAccessController)
+            .forEach(entity => { accessOptions[entity.id] = entity.name; });
+        body.appendChild(field("Contrôle d'accès :", selectInput(accessOptions,
+            decor.accessEntityId || '', value => {
+                decor.accessEntityId = value;
+                refresh();
+                render();
+            })));
+        const access = Store.getAccessController(decor);
+        if (access) {
+            const accessState = document.createElement('span');
+            accessState.className = 'ins-capabilities';
+            accessState.textContent = Store.isAccessOpen(decor) ? 'OUVERT' : 'VERROUILLÉ';
+            accessState.style.color = Store.isAccessOpen(decor) ? 'var(--success)' : 'var(--warning)';
+            body.appendChild(field('État d’accès :', accessState));
+        }
 
         body.appendChild(checkboxField('Bloque le déplacement', decor.blocksMovement, value => {
             decor.blocksMovement = value;

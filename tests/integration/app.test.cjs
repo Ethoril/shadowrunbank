@@ -278,6 +278,51 @@ test('la suite smoke complète passe dans un vrai navigateur', async () => {
     await context.close();
 });
 
+test('les accès liés et filtres de carte restent distincts entre MJ et joueurs', async () => {
+    const context = await browser.newContext();
+    await context.route('**/js/cloud.js*', route => route.abort());
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html');
+    const ids = await page.evaluate(() => {
+        const floor = Store.currentFloor();
+        floor.revealed = true;
+        const node = Store.addEntity('network_node', floor.id, 2.5, 2.5, 'Nœud test');
+        const camera = Store.addEntity('camera', floor.id, 5.5, 2.5, 'Caméra test');
+        const maglock = Store.addEntity('maglock', floor.id, 7.5, 2.5, 'Maglock test');
+        const door = Store.addDecor('opaque_door', floor.id, 8.5, 2.5);
+        [node, camera, maglock, door].forEach(item => { item.revealed = true; });
+        camera.networkId = node.id;
+        camera.coverage.revealed = true;
+        door.accessEntityId = maglock.id;
+        Store.setEntityState(maglock, 'hacked');
+        App.renderAll();
+        return { door: door.id };
+    });
+
+    await page.locator(`.decor[data-id="${ids.door}"]`).waitFor();
+    assert.equal(await page.locator(`.decor[data-id="${ids.door}"]`).getAttribute('class')
+        .then(value => value.includes('access-open')), true);
+    assert.equal(await page.locator(`.decor[data-id="${ids.door}"] .decor-access-state`).innerText(), 'OUVERT');
+    assert.ok(await page.locator('#g-coverages > *').count() > 0);
+    assert.ok(await page.locator('#g-cables .network-cable').count() > 0);
+
+    await page.locator('#toggle-coverages').click();
+    assert.equal(await page.locator('#g-coverages > *').count(), 0);
+    assert.ok(await page.locator('#g-cables .network-cable').count() > 0);
+
+    await page.locator('#preview-btn').click();
+    assert.equal(await page.locator('#toggle-coverages').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('#toggle-network-links').getAttribute('aria-pressed'), 'true');
+    await page.locator('#toggle-network-links').click();
+    assert.equal(await page.locator('#g-cables .network-cable').count(), 0);
+
+    await page.locator('#preview-btn').click();
+    assert.equal(await page.locator('#toggle-coverages').getAttribute('aria-pressed'), 'false');
+    assert.equal(await page.locator('#toggle-network-links').getAttribute('aria-pressed'), 'true');
+    assert.ok(await page.locator('#g-cables .network-cable').count() > 0);
+    await context.close();
+});
+
 test('annuler et rétablir fonctionnent depuis le header', async () => {
     const context = await browser.newContext();
     await context.route('**/js/cloud.js*', route => route.abort());

@@ -456,6 +456,35 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     color: var(--text-muted);
 }
 
+.map-display-controls {
+    position: absolute;
+    left: 14px;
+    bottom: 14px;
+    z-index: 50;
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: rgba(3, 7, 13, 0.88);
+    border: 1px solid rgba(0, 210, 255, 0.6);
+}
+.map-display-controls button {
+    min-height: 28px;
+    padding: 3px 8px;
+    border: 1px solid var(--text-muted);
+    background: transparent;
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 0.72rem;
+    cursor: pointer;
+}
+.map-display-controls button[aria-pressed="true"] {
+    border-color: var(--primary);
+    background: rgba(0, 210, 255, 0.14);
+    color: var(--primary);
+    box-shadow: 0 0 6px rgba(0, 210, 255, 0.24);
+}
+.map-display-controls button:hover { color: var(--text-main); }
+
 /* Plateau : grille logique mise à l'échelle, centré dans le wrapper */
 #board {
     position: absolute;
@@ -547,6 +576,28 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
 .elevator-cabin-door.door-east { top: 25%; bottom: 25%; right: -3px; width: 5px; }
 .elevator-cabin-door.door-west { top: 25%; bottom: 25%; left: -3px; width: 5px; }
 .decor.blocks-vision { box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.9), 0 0 5px currentColor; }
+.decor.access-open {
+    border-color: var(--success);
+    border-style: dashed;
+    background: rgba(74, 246, 38, 0.06);
+    box-shadow: 0 0 8px rgba(74, 246, 38, 0.5);
+    color: var(--success) !important;
+}
+.decor-access-state {
+    position: absolute;
+    left: 50%;
+    top: -17px;
+    transform: translateX(-50%);
+    padding: 1px 4px;
+    border: 1px solid var(--success);
+    background: rgba(3, 7, 13, 0.94);
+    color: var(--success);
+    font-size: 0.5rem;
+    line-height: 1.2;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    pointer-events: none;
+}
 .decor:hover, .decor.selected { outline: 2px solid var(--primary); outline-offset: 2px; z-index: 20; }
 .decor.dragging { cursor: grabbing; }
 .decor.unrevealed { border-style: dashed; opacity: 0.45; }

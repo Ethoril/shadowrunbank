@@ -47,7 +47,39 @@ const App = (() => {
         if (snapshotBtn) snapshotBtn.style.display = Store.ui.readOnly ? 'none' : '';
         const snapshotPanel = document.getElementById('snapshot-panel');
         if (snapshotPanel && Store.ui.readOnly) snapshotPanel.hidden = true;
+        updateOverlayControls();
         updateHistoryControls();
+    }
+
+    function updateOverlayControls() {
+        const preferences = Store.getOverlayPreferences();
+        const controls = {
+            'toggle-coverages': preferences.coverages,
+            'toggle-network-links': preferences.networkLinks
+        };
+        Object.entries(controls).forEach(([id, visible]) => {
+            const button = document.getElementById(id);
+            if (!button) return;
+            button.setAttribute('aria-pressed', visible ? 'true' : 'false');
+        });
+    }
+
+    function wireOverlayControls() {
+        const bindings = {
+            'toggle-coverages': 'coverages',
+            'toggle-network-links': 'networkLinks'
+        };
+        Object.entries(bindings).forEach(([id, key]) => {
+            const button = document.getElementById(id);
+            if (!button) return;
+            button.addEventListener('click', () => {
+                const next = !Store.getOverlayPreferences()[key];
+                Store.setOverlayVisibility(key, next);
+                updateOverlayControls();
+                MapView.renderOverlay();
+            });
+        });
+        updateOverlayControls();
     }
 
     function updateHistoryControls() {
@@ -614,6 +646,7 @@ const App = (() => {
         wireRetryCloudButton();
         wireHistoryControls();
         wireInspectorDrawer();
+        wireOverlayControls();
 
         const previewBtn = document.getElementById('preview-btn');
         if (previewBtn) previewBtn.addEventListener('click', togglePreview);

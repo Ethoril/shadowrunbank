@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shadowrun Bank Planner :: Overlord_View</title>
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=19">
+    <link rel="stylesheet" href="css/style.css?v=20">
 </head>
 <body>
 
@@ -116,6 +116,10 @@
                     <div id="tokens-layer"></div>
                 </div>
             </div>
+            <div class="map-display-controls" role="group" aria-label="Éléments affichés sur la carte">
+                <button id="toggle-coverages" type="button" aria-pressed="true" title="Afficher ou masquer les cônes et zones de détection">◉ Zones</button>
+                <button id="toggle-network-links" type="button" aria-pressed="true" title="Afficher ou masquer les liaisons avec les nœuds réseau">⌁ Réseau</button>
+            </div>
             <div class="zoom-controls" role="group" aria-label="Zoom de la carte">
                 <button id="zoom-out" type="button" title="Dézoomer (molette bas)">−</button>
                 <span id="zoom-level">100%</span>
@@ -137,14 +141,14 @@
     <button id="panel-backdrop" type="button" aria-label="Fermer le panneau ouvert"></button>
 
     <script src="js/catalog.js?v=20"></script>
-    <script src="js/store.js?v=20"></script>
+    <script src="js/store.js?v=21"></script>
     <script src="js/anim.js?v=20"></script>
-    <script src="js/map.js?v=21"></script>
+    <script src="js/map.js?v=22"></script>
     <script src="js/exploration.js?v=20"></script>
-    <script src="js/inspector.js?v=20"></script>
+    <script src="js/inspector.js?v=21"></script>
     <script src="js/editor.js?v=21"></script>
     <script src="js/visibility.js?v=20"></script>
-    <script src="js/main.js?v=20"></script>
+    <script src="js/main.js?v=21"></script>
     <!-- Firebase (phase 3) : module ES ; en cas d'échec de chargement
          (file://, hors-ligne), l'appli reste en mode localStorage. -->
     <script type="module" src="js/cloud.js?v=20"></script>
