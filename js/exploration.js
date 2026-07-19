@@ -11,16 +11,22 @@ const Exploration = (() => {
         return !!room && Store.roomAt(item.floorId, Math.floor(item.x), Math.floor(item.y)) === room;
     }
 
-    /* Un décor (porte, vitre…) est souvent posé à cheval sur un mur : son
-       centre peut tomber côté voisin alors qu'une partie de son rectangle
-       déborde bien dans la pièce du PJ. On teste donc toutes les cases
-       couvertes par son empreinte (rotation à 90° près) plutôt qu'un point
-       unique — même logique que `elevatorDoorTouchesRoom` pour les cabines. */
+    /* Un décor (porte, vitre…) est posé à cheval sur un mur : son corps, plus
+       fin qu'une case, tient tout entier d'un côté de la frontière alors qu'il
+       devrait être révélé depuis les DEUX salles que le mur sépare. Tester la
+       seule empreinte réelle ne suffit donc pas : une porte calée contre la
+       cloison (centre décalé d'une demi-case) ne touche que sa propre salle.
+       On élargit chaque axe plus fin qu'une case jusqu'à la case voisine
+       au-delà du mur (0,55 > une demi-case, sans jamais sauter deux cases plus
+       loin) — même esprit que `elevatorDoorTouchesRoom` pour les cabines. */
+    const CROSS_WALL_HALF_SPAN = 0.55;
     function decorTouchesRoom(decor, room) {
         if (!room) return false;
         const quarterTurn = Math.abs(Math.round(decor.rotation / 90)) % 2 === 1;
-        const halfWidth = (quarterTurn ? decor.height : decor.width) / 2;
-        const halfHeight = (quarterTurn ? decor.width : decor.height) / 2;
+        const spanWidth = quarterTurn ? decor.height : decor.width;
+        const spanHeight = quarterTurn ? decor.width : decor.height;
+        const halfWidth = spanWidth < 1 ? CROSS_WALL_HALF_SPAN : spanWidth / 2;
+        const halfHeight = spanHeight < 1 ? CROSS_WALL_HALF_SPAN : spanHeight / 2;
         const minCol = Math.floor(decor.x - halfWidth);
         const maxCol = Math.ceil(decor.x + halfWidth) - 1;
         const minRow = Math.floor(decor.y - halfHeight);
