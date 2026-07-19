@@ -48,9 +48,8 @@ const Editor = (() => {
         structure.appendChild(toolButton('erase', '⌫ Gomme', '#ff2a2a'));
         structure.appendChild(toolButton('token', '◉ Nouveau pion PJ', '#00d2ff', 'runner'));
 
-        // 7.11 : la nature de la liaison se choisit dès la création. Un
-        // ascenseur pose sa gaine avec un arrêt (et une porte) sur chaque
-        // étage ; les autres types gardent le flux point par point.
+        // La nature de la liaison se choisit dès la création. Ascenseurs,
+        // escaliers et échelles partagent leurs coordonnées entre étages.
         const transitionsGroup = document.createElement('details');
         transitionsGroup.className = 'tool-category';
         transitionsGroup.open = true;
@@ -521,6 +520,7 @@ const Editor = (() => {
             if (createdType === 'elevator') {
                 Store.populateElevatorStops(transition, pos.x, pos.y);
                 setTicker('ASCENSEUR CRÉÉ // PORTE SUR CHAQUE ÉTAGE — À AJUSTER DANS L\'INSPECTEUR');
+                App.renderAll();
                 return;
             }
             const endpoint = Store.addTransitionEndpoint(transition, floor.id, pos.x, pos.y);
@@ -528,14 +528,15 @@ const Editor = (() => {
                 const range = Store.elevatorFloorRange(transition);
                 const outOfRange = transition.type === 'elevator' && range
                     && (floor.order < range.min || floor.order > range.max);
-                setTicker(transition.type === 'stairs'
-                    ? 'REFUSÉ // UN ESCALIER RELIE EXACTEMENT DEUX ENDPOINTS'
-                    : outOfRange
+                setTicker(outOfRange
                         ? 'REFUSÉ // ÉTAGE HORS DESSERTE DE L\'ASCENSEUR'
-                        : 'REFUSÉ // UN SEUL ARRÊT PAR ÉTAGE POUR UN ASCENSEUR');
+                        : 'REFUSÉ // CET ÉTAGE EST DÉJÀ RACCORDÉ');
             } else {
-                setTicker('POINT DE TRANSITION AJOUTÉ // ' + transition.name.toUpperCase());
+                setTicker(['stairs', 'ladder'].includes(transition.type)
+                    ? 'LIAISON CRÉÉE // COCHE LES ÉTAGES RACCORDÉS DANS L\'INSPECTEUR'
+                    : 'POINT DE TRANSITION AJOUTÉ // ' + transition.name.toUpperCase());
             }
+            App.renderAll();
             return;
         }
 
@@ -631,9 +632,9 @@ const Editor = (() => {
                 const bounded = clampEntityPos(pos, grid);
                 endpoint.x = bounded.x;
                 endpoint.y = bounded.y;
-                // 7.8 : la gaine d'un ascenseur est solidaire — déplacer un
-                // endpoint déplace toute la liaison, sur tous les étages.
-                if (transition.type === 'elevator') {
+                // Les liaisons à position partagée se déplacent en bloc sur
+                // tous leurs étages raccordés.
+                if (['stairs', 'ladder', 'elevator'].includes(transition.type)) {
                     transition.endpoints.forEach(item => {
                         item.x = bounded.x;
                         item.y = bounded.y;

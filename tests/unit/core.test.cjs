@@ -373,22 +373,35 @@ test('la gaine générée occulte comme un décor opaque (7.8)', () => {
     assert.equal(MapView.isLineBlocked(floor.id, from, to, 'optical', 0), true);
 });
 
-test('un escalier relie exactement deux endpoints (7.10)', () => {
+test('escaliers et échelles partagent leur position sur les étages cochés', () => {
     const { Store } = loadApplicationCore();
     Store.load();
     const floors = Store.sortedFloors();
     const stairs = Store.addTransition('stairs', 'Escalier de service');
     assert.equal(stairs.direction, 'both');
     Store.addTransitionEndpoint(stairs, floors[0].id, 4, 6);
-    Store.addTransitionEndpoint(stairs, floors[1].id, 4, 2);
-    assert.equal(Store.addTransitionEndpoint(stairs, floors[2].id, 4, 4), null);
-    assert.equal(stairs.endpoints.length, 2);
+    Store.addTransitionEndpoint(stairs, floors[1].id, 9, 2);
+    assert.equal(Store.setTransitionFloorConnected(stairs, floors[2].id, true), true);
+    assert.equal(stairs.endpoints.length, 3);
+    stairs.endpoints.forEach(endpoint => {
+        assert.equal(endpoint.x, 4);
+        assert.equal(endpoint.y, 6);
+    });
+    assert.equal(Store.addTransitionEndpoint(stairs, floors[2].id, 12, 12), null,
+        'un étage ne peut être raccordé qu’une fois');
+    assert.equal(Store.setTransitionFloorConnected(stairs, floors[1].id, false), true);
+    assert.equal(stairs.endpoints.some(endpoint => endpoint.floorId === floors[1].id), false);
 
-    // Une liaison à plus de deux endpoints ne peut pas devenir un escalier.
-    const elevator = Store.addTransition('elevator', 'Grande gaine');
-    floors.forEach(floor => Store.addTransitionEndpoint(elevator, floor.id, 10, 10));
-    assert.equal(Store.setTransitionType(elevator, 'stairs'), false);
-    assert.equal(elevator.type, 'elevator');
+    const ladder = Store.addTransition('ladder', 'Échelle technique');
+    Store.addTransitionEndpoint(ladder, floors[0].id, 7, 3);
+    Store.setTransitionFloorConnected(ladder, floors[2].id, true);
+    assert.deepEqual(Array.from(ladder.endpoints, endpoint => [endpoint.x, endpoint.y]),
+        [[7, 3], [7, 3]]);
+
+    // La dernière coche ne peut pas être retirée : la liaison reste éditable.
+    assert.equal(Store.setTransitionFloorConnected(ladder, floors[2].id, false), true);
+    assert.equal(Store.setTransitionFloorConnected(ladder, floors[0].id, false), false);
+    assert.equal(ladder.endpoints.length, 1);
 });
 
 test('le sens d’un escalier s’applique aux deux étages reliés (7.9)', () => {
@@ -498,6 +511,26 @@ test('un nouvel ascenseur dessert tous les étages avec porte par défaut (7.11)
     assert.ok(!partial.endpoints.some(endpoint => endpoint.floorId === floors[2].id));
 });
 
+test('désactiver des arrêts d’ascenseur persiste sans recréer la desserte', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const elevator = Store.addTransition('elevator', 'Ascenseur sélectif');
+    Store.populateElevatorStops(elevator, 8, 8);
+
+    assert.equal(Store.setElevatorStopEnabled(elevator, floors[1].id, false), true);
+    assert.equal(Store.setElevatorStopEnabled(elevator, floors[2].id, false), true);
+    assert.equal(elevator.endpoints.find(item => item.floorId === floors[1].id).hasDoor, false);
+    assert.equal(elevator.endpoints.find(item => item.floorId === floors[2].id).hasDoor, false);
+
+    const reloaded = Store.preparePlan(JSON.parse(Store.exportJson())).plan;
+    const persisted = reloaded.transitions.find(item => item.id === elevator.id);
+    assert.equal(persisted.endpoints.find(item => item.floorId === floors[1].id).hasDoor, false);
+    assert.equal(persisted.endpoints.find(item => item.floorId === floors[2].id).hasDoor, false);
+    assert.equal(Store.populateElevatorStops(elevator), 0,
+        'les niveaux sans arrêt conservent leur endpoint de gaine et ne sont pas recréés');
+});
+
 test('les bornes figées suivent leurs étages quand les ordres changent (7.8)', () => {
     const { Store } = loadApplicationCore();
     Store.load();
@@ -588,6 +621,27 @@ test('le catalogue expose tous les dispositifs attendus', () => {
     });
 });
 
+test('le sens d’un escalier filtre une desserte de plusieurs étages', () => {
+    const { Store, Exploration } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const stairs = Store.addTransition('stairs', 'Escalier central');
+    const upper = Store.addTransitionEndpoint(stairs, floors[0].id, 6, 6);
+    const middle = Store.addTransitionEndpoint(stairs, floors[1].id, 1, 1);
+    const lower = Store.addTransitionEndpoint(stairs, floors[2].id, 2, 2);
+
+    assert.equal(Store.stairsExitDirection(stairs, middle), 'both');
+    assert.deepEqual(Array.from(Exploration.destinationsFor(stairs, middle), item => item.id),
+        [upper.id, lower.id]);
+    Store.setStairsDirection(stairs, 'up');
+    assert.equal(Store.stairsExitDirection(stairs, middle), 'up');
+    assert.deepEqual(Array.from(Exploration.destinationsFor(stairs, middle), item => item.id),
+        [upper.id]);
+    Store.setStairsDirection(stairs, 'down');
+    assert.deepEqual(Array.from(Exploration.destinationsFor(stairs, middle), item => item.id),
+        [lower.id]);
+});
+
 test('entrer dans une salle révèle les catégories évidentes et garde les autres dissimulées', () => {
     const { Store, MapView, EntityCatalog, Exploration } = loadApplicationCore();
     Store.load();
@@ -608,6 +662,13 @@ test('entrer dans une salle révèle les catégories évidentes et garde les aut
     const hidden = hiddenTypes.map(type => Store.addEntity(type, floor.id, 5, 7, type));
     const decors = ['wall', 'safe', 'floor_marking'].map(type =>
         Store.addDecor(type, floor.id, 5, 7));
+    const elevator = Store.addTransition('elevator', 'Ascenseur adjacent');
+    Store.addTransitionEndpoint(elevator, floor.id, 5, 4);
+    const doorlessElevator = Store.addTransition('elevator', 'Gaine sans porte');
+    const doorlessEndpoint = Store.addTransitionEndpoint(doorlessElevator, floor.id, 7, 4);
+    doorlessEndpoint.hasDoor = false;
+    const remoteElevator = Store.addTransition('elevator', 'Ascenseur éloigné');
+    Store.addTransitionEndpoint(remoteElevator, floor.id, 15, 4);
 
     // Simule aussi un ancien plan où un décor avait été explicitement marqué
     // non découvrable : sa présence dans la salle prime désormais.
@@ -619,6 +680,9 @@ test('entrer dans une salle révèle les catégories évidentes et garde les aut
         assert.equal(Store.isDiscovered('entity', entity.id), true, entity.type);
         assert.equal(EntityCatalog.get(entity.type).autoDiscover, true, entity.type);
     });
+    visible.filter(entity => entity.coverage && entity.coverage.shape === 'cone')
+        .forEach(entity => assert.equal(Store.isDiscovered('coverage', entity.id), true,
+            'cône de ' + entity.type));
     hidden.forEach(entity => {
         assert.equal(Store.isDiscovered('entity', entity.id), false, entity.type);
         assert.equal(EntityCatalog.get(entity.type).autoDiscover, false, entity.type);
@@ -626,6 +690,12 @@ test('entrer dans une salle révèle les catégories évidentes et garde les aut
     decors.forEach(decor => {
         assert.equal(Store.isDiscovered('decor', decor.id), true, decor.type);
     });
+    assert.equal(Store.isDiscovered('transition', elevator.id), true,
+        'la porte sud touche la salle découverte');
+    assert.equal(Store.isDiscovered('transition', doorlessElevator.id), false,
+        'une gaine sans porte reste cachée');
+    assert.equal(Store.isDiscovered('transition', remoteElevator.id), false,
+        'un ascenseur éloigné reste caché');
 });
 
 test('un décor lié à un contrôle d’accès reflète son état effectif', () => {

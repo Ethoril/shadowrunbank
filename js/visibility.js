@@ -46,7 +46,7 @@ const Visibility = (() => {
     /* Une ligne de l'arbre : chevron (si enfants), œil, libellé.
        `onSelect` (optionnel) sélectionne l'élément sur la carte. */
     function row(depth, id, hasChildren, revealObj, eyeTitle, labelText, color, onSelect,
-        property = 'revealed', discoveryKind = '') {
+        property = 'revealed', discoveryKind = '', discoveryElementId = revealObj.id) {
         const el = document.createElement('div');
         el.className = 'vis-row';
         el.dataset.nodeId = id;
@@ -77,7 +77,7 @@ const Visibility = (() => {
             label.appendChild(dot);
         }
         const discovery = discoveryKind && Store.getDiscoveries().find(item =>
-            item.kind === discoveryKind && item.elementId === revealObj.id);
+            item.kind === discoveryKind && item.elementId === discoveryElementId);
         const discovered = !!discovery;
         const manual = !!revealObj[property];
         const effective = manual || discovered;
@@ -158,7 +158,7 @@ const Visibility = (() => {
                     container.appendChild(row(depth + 1, ent.id + '_coverage', false,
                         ent.coverage, 'Révéler / cacher la couverture',
                         '📡 ' + ent.coverage.shape + ' · ' + ent.coverage.channel, null,
-                        selectOnMap('entity', ent.id)));
+                        selectOnMap('entity', ent.id), 'revealed', 'coverage', ent.id));
                 }
             }
         });

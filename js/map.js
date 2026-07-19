@@ -461,12 +461,21 @@ const MapView = (() => {
             });
 
             if (room.cells.length > 0) {
+                // Le libellé part de la première case de la ligne la plus
+                // haute. Sur une pièce irrégulière, on le limite au segment
+                // continu réellement disponible afin qu'il ne déborde pas
+                // dans une autre zone.
+                let labelCellWidth = 1;
+                while (cellSet.has((labelCol + labelCellWidth) + ',' + labelRow)) {
+                    labelCellWidth++;
+                }
                 const label = document.createElement('div');
                 label.className = 'room-label' + (hidden ? ' unrevealed' : '');
                 label.dataset.roomId = room.id;
                 label.textContent = room.name;
                 label.style.left = (labelCol * cellPx + 5) + 'px';
                 label.style.top = (labelRow * cellPx + 4) + 'px';
+                label.style.width = Math.max(1, labelCellWidth * cellPx - 10) + 'px';
                 label.style.color = `hsla(${room.hue}, 70%, 72%, 0.9)`;
                 layer.appendChild(label);
             }
@@ -587,13 +596,12 @@ const MapView = (() => {
             : Store.visibleTransitions(floor.id);
         transitions.forEach(transition => {
             transition.endpoints.filter(endpoint => endpoint.floorId === floor.id).forEach(endpoint => {
-                // Sans porte, l'arrêt n'existe pas pour les joueurs : la gaine
-                // seule occupe l'étage (cabine fantôme côté MJ).
+                // Sans porte, la gaine seule occupe l'étage. Même le MJ ne
+                // voit pas d'icône d'arrêt, pour éviter toute ambiguïté.
                 const doorless = transition.type === 'elevator' && endpoint.hasDoor === false;
-                if (doorless && Store.isPlayerView()) return;
+                if (doorless) return;
                 const div = document.createElement('div');
                 div.className = 'transition-endpoint state-' + transition.state
-                    + (doorless ? ' no-door' : '')
                     + (Store.ui.selection && Store.ui.selection.kind === 'transition'
                         && Store.ui.selection.id === transition.id ? ' selected' : '')
                     + (Store.isPlayerView() || Store.isEffectivelyRevealed(transition, 'transition') ? '' : ' unrevealed');
@@ -732,14 +740,18 @@ const MapView = (() => {
 
         Store.visibleEntities(floor.id).forEach(ent => {
             if (!ent.coverage) return;
-            // Vue joueur : la couverture a son propre flag, indépendant de l'entité
-            if (Store.isPlayerView() && !ent.coverage.revealed) return;
+            // La couverture conserve son réglage MJ indépendant, mais un cône
+            // peut aussi avoir été découvert avec son porteur dans une salle.
+            const coverageRevealed = ent.coverage.revealed
+                || Store.isDiscovered('coverage', ent.id);
+            if (Store.isPlayerView() && !coverageRevealed) return;
             const effState = Store.getEffectiveState(ent);
             if (effState === 'offline') return;
             const def = EntityCatalog.get(ent.type);
             const color = effState === 'hacked' ? HACKED_COLOR : def.color;
             // Vue MJ : couverture encore cachée aux joueurs → tracé atténué
-            const hidden = !Store.isPlayerView() && !(ent.revealed && ent.coverage.revealed);
+            const hidden = !Store.isPlayerView()
+                && !(Store.isEffectivelyRevealed(ent, 'entity') && coverageRevealed);
 
             const pos = Anim.effectivePos(ent, now);
             const coverage = ent.coverage;
