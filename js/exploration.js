@@ -95,9 +95,11 @@ const Exploration = (() => {
             }
         });
         Store.elevatorCabinsOnFloor(token.floorId).forEach(cabin => {
-            if (!elevatorDoorTouchesRoom(cabin, room)) return;
-            if (Store.addDiscovery('transition', cabin.transition, token.id, token.floorId)) {
-                discovered.push({ kind: 'transition', id: cabin.transition.id });
+            // Voir la cabine ne révèle que l'arrêt de CET étage, pas toute
+            // la gaine : les autres sorties restent à découvrir.
+            if (!cabin.endpoint || !elevatorDoorTouchesRoom(cabin, room)) return;
+            if (Store.addDiscovery('endpoint', cabin.endpoint, token.id, token.floorId)) {
+                discovered.push({ kind: 'endpoint', id: cabin.endpoint.id });
             }
         });
         return discovered;
@@ -157,7 +159,10 @@ const Exploration = (() => {
         token.y = Math.min(Math.max(destination.y + (offset ? offset.y : 0), 0.5), grid.rows - 0.5);
         token.updatedAt = Date.now();
         Store.ui.currentFloorId = destination.floorId;
-        Store.addDiscovery('transition', transition, token.id, sourceEndpoint.floorId);
+        // Emprunter la liaison révèle les deux points traversés (départ et
+        // arrivée), pas les autres sorties de la même trappe/gaine.
+        Store.addDiscovery('endpoint', sourceEndpoint, token.id, sourceEndpoint.floorId);
+        Store.addDiscovery('endpoint', destination, token.id, destination.floorId);
         discoverFromToken(token);
         Store.commitTokenPosition(token);
         return true;

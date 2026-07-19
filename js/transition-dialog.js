@@ -9,10 +9,8 @@
 
 const TransitionDialog = (() => {
     /* Sur le point même (rayon d'interaction de transitionAtToken) :
-       considéré dans la cabine, coché d'office. Un peu plus loin :
-       proposé mais décoché. */
+       considéré dans la cabine, coché d'office. */
     const ON_POINT_RADIUS = 0.8;
-    const NEARBY_RADIUS = 1.5;
 
     let backdrop = null;
 
@@ -24,13 +22,14 @@ const TransitionDialog = (() => {
 
     /* PJ susceptibles d'embarquer avec le pion déplacé : mêmes règles de
        manipulation que le drag (verrou, visibilité et playerMovable en vue
-       joueur), à portée du point de passage. */
+       joueur). Tous les pions de l'étage sont proposés, triés du plus
+       proche au plus lointain — seuls ceux déjà sur le point sont cochés
+       d'office. */
     function riderCandidates(token, endpoint) {
         return Store.visibleTokens(token.floorId)
             .filter(item => item.id !== token.id && !item.locked
                 && (!Store.isPlayerView() || item.playerMovable))
             .map(item => ({ token: item, distance: Math.hypot(item.x - endpoint.x, item.y - endpoint.y) }))
-            .filter(item => item.distance <= NEARBY_RADIUS)
             .sort((a, b) => a.distance - b.distance);
     }
 

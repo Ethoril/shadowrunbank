@@ -483,6 +483,46 @@ test('un arrêt d’ascenseur sans porte n’est jamais une destination (7.8)', 
     assert.equal(token.floorId, floors[1].id);
 });
 
+test('emprunter une trappe ne révèle que les points traversés', () => {
+    const { Store, Exploration } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const hatch = Store.addTransition('hatch', 'Trappe à trois sorties');
+    const a = Store.addTransitionEndpoint(hatch, floors[0].id, 3, 3);
+    const b = Store.addTransitionEndpoint(hatch, floors[0].id, 8, 8);
+    const c = Store.addTransitionEndpoint(hatch, floors[1].id, 5, 5);
+
+    const token = Store.addToken(floors[0].id, 3, 3);
+    assert.equal(Exploration.moveThroughTransition(token, hatch, a, c), true);
+    // Départ et arrivée visibles, la troisième sortie reste cachée.
+    assert.equal(Store.isEndpointRevealed(hatch, a), true);
+    assert.equal(Store.isEndpointRevealed(hatch, c), true);
+    assert.equal(Store.isEndpointRevealed(hatch, b), false);
+
+    // L'œil MJ peut re-cacher un point découvert par les pions.
+    assert.equal(Store.removeDiscovery('endpoint', a.id), true);
+    assert.equal(Store.isEndpointRevealed(hatch, a), false);
+});
+
+test('les anciennes découvertes de transition migrent vers les points de leur étage', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const hatch = Store.addTransition('hatch', 'Trappe héritée');
+    const a = Store.addTransitionEndpoint(hatch, floors[0].id, 3, 3);
+    const b = Store.addTransitionEndpoint(hatch, floors[1].id, 5, 5);
+    // Ancien enregistrement global (niveau transition), découvert sur floors[0].
+    Store.applyRemoteDiscoveries([{
+        id: 'transition_' + hatch.id, kind: 'transition', elementId: hatch.id,
+        floorId: floors[0].id, discoveredBy: 'pion-legacy', discoveredAt: 123
+    }]);
+    // Seul le point de l'étage de la découverte reste visible.
+    assert.equal(Store.isEndpointRevealed(hatch, a), true);
+    assert.equal(Store.isEndpointRevealed(hatch, b), false);
+    assert.ok(Store.getDiscoveries().every(item => item.kind !== 'transition'),
+        'l’enregistrement global est remplacé par des découvertes par point');
+});
+
 test('un groupe de PJ embarque ensemble et arrive en couronne sans empilement', () => {
     const { Store, Exploration } = loadApplicationCore();
     Store.load();
@@ -738,11 +778,13 @@ test('entrer dans une salle révèle les catégories évidentes et garde les aut
     decors.forEach(decor => {
         assert.equal(Store.isDiscovered('decor', decor.id), true, decor.type);
     });
-    assert.equal(Store.isDiscovered('transition', elevator.id), true,
+    // La découverte d'une cabine est par point de passage : seul l'arrêt
+    // de l'étage visité devient visible.
+    assert.equal(Store.isEndpointRevealed(elevator, elevator.endpoints[0]), true,
         'la porte sud touche la salle découverte');
-    assert.equal(Store.isDiscovered('transition', doorlessElevator.id), false,
+    assert.equal(Store.isEffectivelyRevealed(doorlessElevator, 'transition'), false,
         'une gaine sans porte reste cachée');
-    assert.equal(Store.isDiscovered('transition', remoteElevator.id), false,
+    assert.equal(Store.isEffectivelyRevealed(remoteElevator, 'transition'), false,
         'un ascenseur éloigné reste caché');
 });
 

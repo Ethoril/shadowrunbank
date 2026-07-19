@@ -795,7 +795,10 @@ const Inspector = (() => {
         badge.className = 'ins-type-badge';
         badge.textContent = 'TRANSITION MULTI-ÉTAGES';
         body.appendChild(field('Type :', badge));
-        appendDiscoveryOrigin(body, 'transition', transition);
+        // La découverte est par point de passage : montrer l'origine du
+        // premier point découvert de la liaison.
+        appendDiscoveryOrigin(body, 'endpoint', transition.endpoints
+            .find(endpoint => Store.isDiscovered('endpoint', endpoint.id)));
         body.appendChild(field('Nom :', textInput(transition.name, value => {
             transition.name = value; refresh();
         })));
@@ -827,7 +830,7 @@ const Inspector = (() => {
             const pointName = 'Point « ' + floorName + ' »' + (letter ? ' ' + letter : '');
             body.appendChild(revealToggle(pointName, endpoint, () => {
                 MapView.renderTransitions(); Visibility.render();
-            }));
+            }, { kind: 'endpoint', elementId: endpoint.id }));
         });
 
         const accessOptions = { '': '[Aucun verrou associé]' };
@@ -1071,17 +1074,25 @@ const Inspector = (() => {
 
     /* Toggle 👁 Révélé / Caché — `obj` porte un flag `revealed`
        (entité, pièce, étage, mais aussi ronde ou couverture). */
-    function revealToggle(labelText, obj, onChange) {
+    /* `discovery` (optionnel, { kind, elementId }) : le bouton reflète la
+       visibilité EFFECTIVE (révélé MJ ou découvert par un pion) et
+       « cacher » retire aussi la découverte, sinon l'élément resterait
+       visible des joueurs malgré l'affichage « caché » côté MJ. */
+    function revealToggle(labelText, obj, onChange, discovery) {
+        const isOn = () => !!obj.revealed
+            || !!(discovery && Store.isDiscovered(discovery.kind, discovery.elementId));
         const btn = document.createElement('button');
         const paint = () => {
-            btn.className = 'btn-reveal' + (obj.revealed ? ' revealed' : '');
-            btn.textContent = obj.revealed
-                ? '👁 ' + labelText + ' révélé aux joueurs'
+            btn.className = 'btn-reveal' + (isOn() ? ' revealed' : '');
+            btn.textContent = isOn()
+                ? '👁 ' + labelText + (obj.revealed ? ' révélé aux joueurs' : ' découvert par les pions')
                 : '🚫 ' + labelText + ' caché — cliquer pour révéler';
         };
         paint();
         btn.addEventListener('click', () => {
-            obj.revealed = !obj.revealed;
+            const next = !isOn();
+            obj.revealed = next;
+            if (!next && discovery) Store.removeDiscovery(discovery.kind, discovery.elementId);
             Store.touch();
             paint();
             if (onChange) onChange();
