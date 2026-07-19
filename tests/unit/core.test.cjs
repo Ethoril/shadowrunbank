@@ -483,6 +483,34 @@ test('un arrêt d’ascenseur sans porte n’est jamais une destination (7.8)', 
     assert.equal(token.floorId, floors[1].id);
 });
 
+test('un groupe de PJ embarque ensemble et arrive en couronne sans empilement', () => {
+    const { Store, Exploration } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const elevator = Store.addTransition('elevator', 'Cabine de service');
+    const a = Store.addTransitionEndpoint(elevator, floors[0].id, 12, 8);
+    const b = Store.addTransitionEndpoint(elevator, floors[1].id, 12, 8);
+    const group = [
+        Store.addToken(floors[0].id, 12, 8, 'Meneur'),
+        Store.addToken(floors[0].id, 12.5, 8, 'Second'),
+        Store.addToken(floors[0].id, 11.5, 8.5, 'Troisième')
+    ];
+    assert.equal(Exploration.moveGroupThroughTransition(group, elevator, a, b), 3);
+    const spots = new Set();
+    group.forEach(token => {
+        assert.equal(token.floorId, floors[1].id);
+        spots.add(token.x + '_' + token.y);
+    });
+    assert.equal(spots.size, 3, 'chaque pion a sa propre case d’arrivée');
+    // Le meneur arrive exactement sur le point de passage.
+    assert.deepEqual({ x: group[0].x, y: group[0].y }, { x: b.x, y: b.y });
+
+    // Transition hors ligne : personne ne bouge.
+    elevator.state = 'offline';
+    assert.equal(Exploration.moveGroupThroughTransition(group, elevator, b, a), 0);
+    group.forEach(token => assert.equal(token.floorId, floors[1].id));
+});
+
 test('la purge des décors escalier / cabine est explicite et complète (7.10)', () => {
     const { Store } = loadApplicationCore();
     Store.load();
