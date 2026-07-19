@@ -506,10 +506,13 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
 .room-label {
     position: absolute;
     pointer-events: none;
+    box-sizing: border-box;
     font-size: 0.72rem;
+    line-height: 1.25;
     text-transform: uppercase;
     letter-spacing: 1px;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
     z-index: 3;
     text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
 }
@@ -706,8 +709,6 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
 .transition-endpoint.unrevealed { border-style: dashed; opacity: 0.5; }
 .transition-endpoint.state-offline { filter: grayscale(1); }
 .transition-endpoint.dragging { cursor: grabbing; }
-/* Arrêt d'ascenseur sans porte : visible du MJ seulement (7.8) */
-.transition-endpoint.no-door { border-style: dotted; opacity: 0.4; }
 /* Sens de circulation d'un escalier depuis cet endpoint (7.9) */
 .transition-direction {
     position: absolute;

@@ -144,6 +144,7 @@ const Store = (() => {
     const TRANSITION_TYPES = ['stairs', 'elevator', 'ladder', 'hatch', 'passage'];
     const STAIRS_DIRECTIONS = ['up', 'down', 'both'];
     const CABIN_DOOR_SIDES = ['north', 'south', 'east', 'west'];
+    const SHARED_POSITION_TRANSITION_TYPES = new Set(['stairs', 'ladder', 'elevator']);
 
     /* `floors` (optionnel) sert à convertir l'ancien `bidirectional: false`
        d'un escalier en sens up/down relatif à l'ordre des étages. */
@@ -202,6 +203,15 @@ const Store = (() => {
             delete transition.minFloorOrder;
             delete transition.maxFloorOrder;
             transition.endpoints.forEach(endpoint => { delete endpoint.hasDoor; });
+        }
+        if (SHARED_POSITION_TRANSITION_TYPES.has(transition.type)) {
+            const anchor = transition.endpoints[0];
+            if (anchor) {
+                transition.endpoints.forEach(endpoint => {
+                    endpoint.x = anchor.x;
+                    endpoint.y = anchor.y;
+                });
+            }
         }
         return transition;
     }
@@ -1103,19 +1113,22 @@ const Store = (() => {
         });
     }
 
-    /* Sens de sortie autorisé depuis un endpoint d'escalier : 'up', 'down',
-       'both' (étages de même ordre) ou null si l'escalier ne se prend pas
-       dans ce sens — l'étage est alors sans issue via cette transition. */
+    /* Sens de sortie disponible depuis un endpoint d'escalier. Avec une
+       desserte multi-étages, `both` signifie que des destinations existent
+       au-dessus et au-dessous de l'étage courant. */
     function stairsExitDirection(transition, sourceEndpoint) {
         if (!transition || transition.type !== 'stairs' || !sourceEndpoint) return null;
-        const other = transition.endpoints.find(item => item.id !== sourceEndpoint.id);
-        const sourceFloor = other ? findFloor(sourceEndpoint.floorId) : null;
-        const targetFloor = other ? findFloor(other.floorId) : null;
-        if (!sourceFloor || !targetFloor) return null;
-        const exit = targetFloor.order < sourceFloor.order ? 'up'
-            : targetFloor.order > sourceFloor.order ? 'down' : 'both';
-        if (transition.direction === 'both') return exit;
-        return exit === transition.direction ? exit : null;
+        const sourceFloor = findFloor(sourceEndpoint.floorId);
+        if (!sourceFloor) return null;
+        const targets = transition.endpoints
+            .filter(item => item.id !== sourceEndpoint.id)
+            .map(item => findFloor(item.floorId))
+            .filter(Boolean);
+        const hasUp = targets.some(floor => floor.order < sourceFloor.order);
+        const hasDown = targets.some(floor => floor.order > sourceFloor.order);
+        const allowsUp = transition.direction !== 'down' && hasUp;
+        const allowsDown = transition.direction !== 'up' && hasDown;
+        return allowsUp && allowsDown ? 'both' : allowsUp ? 'up' : allowsDown ? 'down' : null;
     }
 
     function persistTokens() {
@@ -1537,19 +1550,18 @@ const Store = (() => {
         return transition;
     }
 
-    /* Renvoie null sans muter si l'ajout est refusé : un escalier relie
-       exactement deux endpoints (7.10), un ascenseur n'a qu'un arrêt par
-       étage et ne dessert pas au-delà de ses bornes figées. Pour un
-       ascenseur, x/y sont imposés par la gaine. */
+    /* Renvoie null sans muter si l'ajout est refusé. Escaliers, échelles et
+       ascenseurs partagent une position unique sur tous les étages reliés. */
     function addTransitionEndpoint(transition, floorId, x, y, label) {
-        if (transition.type === 'stairs' && transition.endpoints.length >= 2) return null;
+        if (SHARED_POSITION_TRANSITION_TYPES.has(transition.type)
+            && transition.endpoints.some(item => item.floorId === floorId)) return null;
         if (transition.type === 'elevator') {
-            if (transition.endpoints.some(item => item.floorId === floorId)) return null;
             const floor = findFloor(floorId);
             const range = elevatorFloorRange(transition);
             if (!floor || (range && (floor.order < range.min || floor.order > range.max))) return null;
         }
-        const anchor = transition.type === 'elevator' ? transition.endpoints[0] : null;
+        const anchor = SHARED_POSITION_TRANSITION_TYPES.has(transition.type)
+            ? transition.endpoints[0] : null;
         const endpoint = {
             id: uid('ep'), floorId,
             x: clampNumber(anchor ? anchor.x : x, 0.5, Math.max(0.5, plan.grid.cols - 0.5), 0.5),
@@ -1560,6 +1572,20 @@ const Store = (() => {
         transition.endpoints.push(endpoint);
         touch();
         return endpoint;
+    }
+
+    function setTransitionFloorConnected(transition, floorId, connected, x, y) {
+        if (!transition || !['stairs', 'ladder'].includes(transition.type)
+            || !findFloor(floorId)) return false;
+        const existing = transition.endpoints.find(endpoint => endpoint.floorId === floorId);
+        if (connected) {
+            if (existing) return false;
+            return !!addTransitionEndpoint(transition, floorId, x, y);
+        }
+        if (!existing || transition.endpoints.length <= 1) return false;
+        transition.endpoints = transition.endpoints.filter(endpoint => endpoint.id !== existing.id);
+        touch('Modifier les étages raccordés');
+        return true;
     }
 
     /* Crée les arrêts manquants d'un ascenseur sur tous les étages de sa
@@ -1587,11 +1613,26 @@ const Store = (() => {
         return added;
     }
 
-    /* Changement de nature : renormalise les champs spécifiques au type
-       (cabine, bornes, sens). Refuse `stairs` au-delà de deux endpoints. */
+    function setElevatorStopEnabled(transition, floorId, enabled, x, y) {
+        if (!transition || transition.type !== 'elevator') return false;
+        const floor = findFloor(floorId);
+        const range = elevatorFloorRange(transition);
+        if (!floor || !range || floor.order < range.min || floor.order > range.max) return false;
+        let endpoint = transition.endpoints.find(item => item.floorId === floorId);
+        if (!endpoint && enabled) {
+            endpoint = addTransitionEndpoint(transition, floorId, x, y);
+            return !!endpoint;
+        }
+        if (!endpoint || endpoint.hasDoor === enabled) return false;
+        endpoint.hasDoor = enabled;
+        touch('Modifier un arrêt d\'ascenseur');
+        return true;
+    }
+
+    /* Changement de nature : renormalise les champs spécifiques au type et
+       aligne les positions lors d'un passage vers escalier ou échelle. */
     function setTransitionType(transition, type) {
         if (!TRANSITION_TYPES.includes(type) || transition.type === type) return false;
-        if (type === 'stairs' && transition.endpoints.length > 2) return false;
         transition.type = type;
         normalizeTransition(transition, plan.grid, plan.floors);
         touch('Changer la nature d\'une liaison');
@@ -1946,8 +1987,9 @@ const Store = (() => {
         addFloor, deleteFloor, moveFloor,
         addRoom, paintCell, eraseCell, deleteRoom, roomAt,
         addDecor, duplicateDecor, deleteDecor,
-        addTransition, addTransitionEndpoint, removeTransitionEndpoint, deleteTransition,
-        populateElevatorStops,
+        addTransition, addTransitionEndpoint, setTransitionFloorConnected,
+        removeTransitionEndpoint, deleteTransition,
+        populateElevatorStops, setElevatorStopEnabled,
         setTransitionType, setStairsDirection, stairsExitDirection,
         elevatorFloorRange, elevatorCabinsOnFloor,
         elevatorEndpointsOutOfRange, setElevatorBound,

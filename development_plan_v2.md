@@ -581,7 +581,7 @@ Contrôles MJ :
 - [x] Un pion se déplace correctement au doigt
 - [x] Le MJ peut verrouiller son déplacement
 - [x] Deux écrans voient la nouvelle position après relâchement — validé en production le 2026-07-16
-- [x] Un escalier relie exactement deux endpoints
+- [x] Un escalier ou une échelle partage une position unique sur tous les étages cochés
 - [x] Un ascenseur dessert au moins trois étages
 - [x] Une destination inconnue autorisée peut être rejointe
 - [x] Une transition désactivée ne peut pas être utilisée
@@ -684,7 +684,7 @@ Règles :
 
 Cible : pouvoir déclarer qu'un escalier ne monte que dans un sens, descend
 uniquement, ou fonctionne dans les deux sens, et que ce sens s'applique de façon
-cohérente aux deux étages reliés.
+cohérente à tous les étages raccordés.
 
 ~~~js
 {
@@ -694,7 +694,8 @@ cohérente aux deux étages reliés.
   direction: "up" | "down" | "both",
   endpoints: [
     { id: "ep_a", floorId: "f_ground", x: 4, y: 6 },
-    { id: "ep_b", floorId: "f_1", x: 4, y: 2 }
+    { id: "ep_b", floorId: "f_1", x: 4, y: 6 },
+    { id: "ep_c", floorId: "f_2", x: 4, y: 6 }
   ]
 }
 ~~~
@@ -707,8 +708,10 @@ Règles :
 - le sens se lit par rapport à l'ordre des étages (**floor.order**) : « up »
   n'autorise le passage que de l'endpoint sur l'étage le plus bas vers celui du
   plus haut ; « down » uniquement l'inverse ;
-- un escalier reste limité à exactement deux endpoints, pour que « monter » et
-  « descendre » restent sans ambiguïté ;
+- les escaliers et échelles proposent une liste d'étages à cocher et partagent
+  strictement les mêmes coordonnées sur chaque étage raccordé ;
+- avec plusieurs étages, « up » ne propose que les destinations supérieures,
+  « down » uniquement les destinations inférieures et « both » les deux ;
 - l'affichage de l'icône et le menu de confirmation joueur reflètent le sens
   autorisé depuis l'endpoint où se trouve le pion (flèche montante, descendante,
   ou les deux) ; l'étage sans issue via cet escalier ne propose pas cette
@@ -723,7 +726,8 @@ Règles :
 > sélecteur min/max avec confirmation de suppression des arrêts hors plage,
 > outil MJ « Purger les décors escalier / cabine » (avec sauvegarde locale
 > préalable et récapitulatif groupé), `doorSide` explicite, validation qui
-> refuse un troisième endpoint sur un escalier. Les décors `elevator_decor`
+> **Amendé le 2026-07-19 :** escaliers et échelles utilisent désormais une
+> position partagée et une desserte multi-étages par cases à cocher. Les décors `elevator_decor`
 > et `stairs` sont retirés de la palette (marqués `legacy`) mais restent
 > rendus sur les plans existants tant que la purge n'a pas été lancée.
 
@@ -744,8 +748,9 @@ Règles :
   migrations de ce projet (section 16).
 - **doorSide explicite plutôt que déduit de la rotation.** Confirmé tel que
   proposé en 7.8.
-- **Escaliers limités à deux endpoints.** Confirmé : ajouter une validation qui
-  refuse un troisième endpoint sur une transition de type **stairs**.
+- **Escaliers et échelles multi-étages.** La limite historique de deux endpoints
+  est supprimée : l'inspecteur affiche les étages raccordés sous forme de cases
+  à cocher et chaque item reste à la même position sur tous ces étages.
 
 ## 7.11 Reste à cadrer avant développement
 
@@ -755,9 +760,11 @@ Règles :
   gaine en un clic avec un arrêt **et une porte sur chaque étage desservi**
   (cabine et bornes par défaut) ; le MJ retire ensuite les portes non désirées
   dans l'inspecteur — par exemple un ascenseur qui ne s'arrête qu'aux étages
-  pairs. Un bouton « Créer les arrêts manquants (porte partout) » complète la
-  desserte d'un ascenseur existant ou converti. Les types sans cabine
-  conservent le flux point par point.
+  pairs. La desserte affiche une case par étage : décocher conserve la gaine
+  mais retire durablement l'arrêt et son icône ; recocher restaure l'arrêt avec
+  porte. Escaliers et échelles utilisent
+  une desserte par étages cochés ; trappes et passages conservent le flux point
+  par point.
 - ~~Définir l'ordre exact des opérations de la boîte de confirmation de
   suppression des anciens décors.~~ **Tranché le 2026-07-19 :** un seul
   récapitulatif groupé pour tout le plan, trié étage par étage, affiché par
@@ -1177,7 +1184,7 @@ Durée indicative : 3 à 4 jours.
 - [x] Synchronisation temps réel
 - [x] Modèle des transitions
 - [x] Outil de liaison multi-étages
-- [x] Escaliers à deux endpoints
+- [x] Escaliers et échelles multi-étages à position partagée
 - [x] Ascenseurs multi-étages
 - [x] Confirmation tactile de changement d'étage
 - [x] Détection des salles traversées

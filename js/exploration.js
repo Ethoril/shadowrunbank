@@ -15,6 +15,32 @@ const Exploration = (() => {
         return EntityCatalog.get(entity.type).autoDiscover === true;
     }
 
+    function elevatorDoorTouchesRoom(cabin, room) {
+        if (!cabin || !cabin.hasDoor || !cabin.endpoint || !room) return false;
+        const side = cabin.doorSide;
+        const horizontal = side === 'north' || side === 'south';
+        const normal = side === 'north' ? { x: 0, y: -1 }
+            : side === 'south' ? { x: 0, y: 1 }
+                : side === 'east' ? { x: 1, y: 0 } : { x: -1, y: 0 };
+        const tangent = horizontal ? { x: 1, y: 0 } : { x: 0, y: 1 };
+        const normalLength = (horizontal ? cabin.height : cabin.width) / 2 + 0.05;
+        const doorHalfLength = (horizontal ? cabin.width : cabin.height) / 4;
+        const angle = cabin.rotation * Math.PI / 180;
+        const rotate = vector => ({
+            x: vector.x * Math.cos(angle) - vector.y * Math.sin(angle),
+            y: vector.x * Math.sin(angle) + vector.y * Math.cos(angle)
+        });
+        const worldNormal = rotate(normal);
+        const worldTangent = rotate(tangent);
+        return [-0.8, 0, 0.8].some(fraction => {
+            const x = cabin.x + worldNormal.x * normalLength
+                + worldTangent.x * doorHalfLength * fraction;
+            const y = cabin.y + worldNormal.y * normalLength
+                + worldTangent.y * doorHalfLength * fraction;
+            return Store.roomAt(cabin.endpoint.floorId, Math.floor(x), Math.floor(y)) === room;
+        });
+    }
+
     function discoverFromToken(token) {
         const floor = Store.findFloor(token.floorId);
         if (!floor) return [];
@@ -29,11 +55,21 @@ const Exploration = (() => {
             if (Store.addDiscovery('entity', entity, token.id)) {
                 discovered.push({ kind: 'entity', id: entity.id });
             }
+            if (entity.coverage && entity.coverage.shape === 'cone'
+                && Store.addDiscovery('coverage', entity, token.id)) {
+                discovered.push({ kind: 'coverage', id: entity.id });
+            }
         });
         Store.floorDecors(token.floorId).forEach(decor => {
             if (!inSameRoom(decor, room)) return;
             if (Store.addDiscovery('decor', decor, token.id)) {
                 discovered.push({ kind: 'decor', id: decor.id });
+            }
+        });
+        Store.elevatorCabinsOnFloor(token.floorId).forEach(cabin => {
+            if (!elevatorDoorTouchesRoom(cabin, room)) return;
+            if (Store.addDiscovery('transition', cabin.transition, token.id, token.floorId)) {
+                discovered.push({ kind: 'transition', id: cabin.transition.id });
             }
         });
         return discovered;
@@ -61,9 +97,16 @@ const Exploration = (() => {
 
     function destinationsFor(transition, sourceEndpoint) {
         if (transition.type === 'stairs') {
-            // 7.9 : le sens de circulation détermine si on peut partir d'ici.
-            if (!Store.stairsExitDirection(transition, sourceEndpoint)) return [];
-            return transition.endpoints.filter(endpoint => endpoint.id !== sourceEndpoint.id);
+            const sourceFloor = Store.findFloor(sourceEndpoint.floorId);
+            if (!sourceFloor) return [];
+            return transition.endpoints.filter(endpoint => {
+                if (endpoint.id === sourceEndpoint.id) return false;
+                const targetFloor = Store.findFloor(endpoint.floorId);
+                if (!targetFloor) return false;
+                if (transition.direction === 'up') return targetFloor.order < sourceFloor.order;
+                if (transition.direction === 'down') return targetFloor.order > sourceFloor.order;
+                return true;
+            });
         }
         const sourceIndex = transition.endpoints.findIndex(endpoint => endpoint.id === sourceEndpoint.id);
         if (!transition.bidirectional && sourceIndex !== 0) return [];
@@ -132,6 +175,6 @@ const Exploration = (() => {
 
     return {
         discoverFromToken, observeTokenMove, transitionAtToken, destinationsFor,
-        moveThroughTransition, offerTransition, handleTokenRelease
+        moveThroughTransition, offerTransition, handleTokenRelease, elevatorDoorTouchesRoom
     };
 })();

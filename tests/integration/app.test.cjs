@@ -400,6 +400,191 @@ test('l’arbre distingue une découverte automatique d’une révélation MJ', 
     await context.close();
 });
 
+test('un nom de salle trop long revient à la ligne sans déborder', async () => {
+    const context = await browser.newContext();
+    await context.route('**/js/cloud.js*', route => route.abort());
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html?mode=admin');
+    await page.waitForSelector('#board');
+
+    const roomId = await page.evaluate(() => {
+        Store.resetPlan();
+        const floor = Store.currentFloor();
+        const room = Store.addRoom(floor.id);
+        room.name = 'Laboratoire expérimental particulièrement confidentiel';
+        room.revealed = true;
+        Store.paintCell(room, 1, 1);
+        Store.paintCell(room, 2, 1);
+        App.renderAll();
+        return room.id;
+    });
+
+    const dimensions = await page.locator(`.room-label[data-room-id="${roomId}"]`)
+        .evaluate(element => {
+            const style = getComputedStyle(element);
+            return {
+                clientWidth: element.clientWidth,
+                scrollWidth: element.scrollWidth,
+                height: element.getBoundingClientRect().height,
+                lineHeight: parseFloat(style.lineHeight)
+            };
+        });
+    assert.ok(dimensions.scrollWidth <= dimensions.clientWidth);
+    assert.ok(dimensions.height > dimensions.lineHeight * 1.5);
+    await context.close();
+});
+
+test('découvrir une salle affiche les cônes et l’ascenseur adjacent aux joueurs', async () => {
+    const context = await browser.newContext();
+    await context.route('**/js/cloud.js*', route => route.abort());
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html?mode=admin');
+    await page.waitForSelector('#board');
+
+    const ids = await page.evaluate(() => {
+        Store.resetPlan();
+        const floor = Store.currentFloor();
+        const room = Store.addRoom(floor.id);
+        for (let row = 5; row <= 8; row++) {
+            for (let col = 1; col <= 8; col++) Store.paintCell(room, col, row);
+        }
+        const camera = Store.addEntity('camera', floor.id, 3.5, 6.5, 'Caméra visible');
+        const elevator = Store.addTransition('elevator', 'Ascenseur du laboratoire');
+        Store.addTransitionEndpoint(elevator, floor.id, 5, 4);
+        const token = Store.addToken(floor.id, 2.5, 6.5, 'Éclaireur');
+        Exploration.discoverFromToken(token);
+        Store.ui.preview = true;
+        App.renderAll();
+        return { camera: camera.id, elevator: elevator.id };
+    });
+
+    assert.equal(await page.locator(
+        `#g-coverages [data-entity-id="${ids.camera}"][data-shape="cone"]`).count(), 1);
+    assert.equal(await page.locator(
+        `.elevator-cabin[data-transition-id="${ids.elevator}"]`).count(), 1);
+    assert.equal(await page.locator(
+        `.transition-endpoint[data-transition-id="${ids.elevator}"]`).count(), 1);
+    await page.evaluate(() => {
+        Store.ui.preview = false;
+        Visibility.render();
+    });
+    assert.ok((await page.locator(
+        `.vis-row[data-node-id="${ids.camera}_coverage"]`).getAttribute('class'))
+        .includes('vis-discovered'));
+    await context.close();
+});
+
+test('l’inspecteur raccorde escaliers et échelles par cases d’étage', async () => {
+    const context = await browser.newContext();
+    await context.route('**/js/cloud.js*', route => route.abort());
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html?mode=admin');
+    await page.waitForSelector('#board');
+
+    const setup = await page.evaluate(() => {
+        Store.resetPlan();
+        Store.addFloor('Niveau intermédiaire');
+        Store.addFloor('Niveau inférieur');
+        const floors = Store.sortedFloors();
+        const stairs = Store.addTransition('stairs', 'Escalier commun');
+        Store.addTransitionEndpoint(stairs, floors[0].id, 4, 4);
+        Store.ui.selection = { kind: 'transition', id: stairs.id };
+        App.renderAll();
+        return {
+            stairs: stairs.id,
+            floorIds: floors.map(floor => floor.id),
+            floorNames: floors.map(floor => floor.name)
+        };
+    });
+
+    assert.equal(await page.locator('.transition-floor-toggle').count(), 3);
+    assert.equal((await page.locator('#inspector-body').innerText())
+        .includes('Ajouter un point sur la carte'), false);
+    await page.locator('.transition-floor-toggle', { hasText: setup.floorNames[1] })
+        .locator('input').check();
+    await page.locator('.transition-floor-toggle', { hasText: setup.floorNames[2] })
+        .locator('input').check();
+    assert.deepEqual(await page.evaluate(id => Store.findTransition(id).endpoints
+        .map(endpoint => [endpoint.x, endpoint.y]), setup.stairs), [[4, 4], [4, 4], [4, 4]]);
+
+    await page.evaluate(floorId => {
+        Store.ui.currentFloorId = floorId;
+        App.renderAll();
+    }, setup.floorIds[2]);
+    assert.equal(await page.locator(
+        `.transition-endpoint[data-transition-id="${setup.stairs}"]`).count(), 1);
+
+    const ladder = await page.evaluate(floorId => {
+        const item = Store.addTransition('ladder', 'Échelle commune');
+        Store.addTransitionEndpoint(item, floorId, 7, 5);
+        Store.ui.selection = { kind: 'transition', id: item.id };
+        App.renderAll();
+        return item.id;
+    }, setup.floorIds[0]);
+    await page.locator('.transition-floor-toggle', { hasText: setup.floorNames[2] })
+        .locator('input').check();
+    assert.deepEqual(await page.evaluate(id => Store.findTransition(id).endpoints
+        .map(endpoint => [endpoint.x, endpoint.y]), ladder), [[7, 5], [7, 5]]);
+    await context.close();
+});
+
+test('les arrêts d’ascenseur décochés restent supprimés après navigation et rechargement', async () => {
+    const context = await browser.newContext();
+    await context.route('**/js/cloud.js*', route => route.abort());
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html?mode=admin');
+    await page.waitForSelector('#board');
+
+    const setup = await page.evaluate(() => {
+        Store.resetPlan();
+        Store.addFloor('Niveau intermédiaire');
+        Store.addFloor('Niveau inférieur');
+        const floors = Store.sortedFloors();
+        const elevator = Store.addTransition('elevator', 'Ascenseur sélectif');
+        Store.populateElevatorStops(elevator, 9, 7);
+        Store.ui.selection = { kind: 'transition', id: elevator.id };
+        App.renderAll();
+        return {
+            elevator: elevator.id,
+            floorIds: floors.map(floor => floor.id),
+            floorNames: floors.map(floor => floor.name)
+        };
+    });
+
+    assert.equal(await page.locator('.elevator-stop-toggle').count(), 3);
+    await page.locator('.elevator-stop-toggle', { hasText: setup.floorNames[1] })
+        .locator('input').uncheck();
+    await page.locator('.elevator-stop-toggle', { hasText: setup.floorNames[2] })
+        .locator('input').uncheck();
+    assert.equal(await page.locator('.elevator-stop-toggle input:checked').count(), 1);
+
+    await page.evaluate(floorId => {
+        Store.ui.currentFloorId = floorId;
+        App.renderAll();
+    }, setup.floorIds[1]);
+    assert.equal(await page.locator(
+        `.transition-endpoint[data-transition-id="${setup.elevator}"]`).count(), 0);
+    assert.equal(await page.locator(
+        `.elevator-cabin[data-transition-id="${setup.elevator}"].ghost`).count(), 1);
+
+    await page.evaluate(() => Store.saveNow());
+    await page.reload();
+    await page.waitForSelector('#board');
+    const persisted = await page.evaluate(id => {
+        const elevator = Store.findTransition(id);
+        Store.ui.selection = { kind: 'transition', id };
+        App.renderAll();
+        return elevator.endpoints.map(endpoint => ({
+            floorId: endpoint.floorId,
+            hasDoor: endpoint.hasDoor
+        }));
+    }, setup.elevator);
+    assert.equal(persisted.find(item => item.floorId === setup.floorIds[1]).hasDoor, false);
+    assert.equal(persisted.find(item => item.floorId === setup.floorIds[2]).hasDoor, false);
+    assert.equal(await page.locator('.elevator-stop-toggle input:checked').count(), 1);
+    await context.close();
+});
+
 test('une caméra piratée affiche un flux limité à son cône dans la vue joueurs', async () => {
     const context = await browser.newContext();
     await context.route('**/js/cloud.js*', route => route.abort());

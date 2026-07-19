@@ -867,7 +867,7 @@
             stairs.state = 'active';
             check('transition : déplacement multi-étages',
                 Exploration.moveThroughTransition(scout, stairs, sourceEndpoint, targetEndpoint)
-                && scout.floorId === phase6TargetFloor.id && scout.x === 3.5 && scout.y === 4.5
+                && scout.floorId === phase6TargetFloor.id && scout.x === 1.5 && scout.y === 3.5
                 && Store.ui.currentFloorId === phase6TargetFloor.id);
             check('transition : déplacement de pion sans écriture du plan principal',
                 plan.updatedAt === planBeforeTokenTravel);
@@ -882,14 +882,16 @@
                 && Exploration.moveThroughTransition(scout, stairs, targetEndpoint, sourceEndpoint) === false);
             Store.setStairsDirection(stairs, 'both');
             const thirdFloor = Store.addFloor('Toit transition');
-            // 7.10 : un escalier refuse un troisième endpoint ; les liaisons
-            // sans cabine (passage) desservent toujours plusieurs destinations.
+            // Escaliers et passages peuvent desservir plusieurs étages ;
+            // l'escalier conserve une position commune.
             const tripleShaft = Store.addTransition('passage', 'Passage triple');
             const tripleSource = Store.addTransitionEndpoint(tripleShaft, phase6Floor.id, 7.5, 2.5);
             Store.addTransitionEndpoint(tripleShaft, phase6TargetFloor.id, 7.5, 2.5);
             Store.addTransitionEndpoint(tripleShaft, thirdFloor.id, 7.5, 2.5);
-            check('transition : escalier limité à deux points, trois destinations via passage',
-                Store.addTransitionEndpoint(stairs, thirdFloor.id, 7.5, 2.5) === null
+            const thirdStairsEndpoint = Store.addTransitionEndpoint(stairs, thirdFloor.id, 7.5, 2.5);
+            check('transition : desserte multi-étages et position commune',
+                thirdStairsEndpoint && stairs.endpoints.length === 3
+                && thirdStairsEndpoint.x === sourceEndpoint.x && thirdStairsEndpoint.y === sourceEndpoint.y
                 && Exploration.destinationsFor(tripleShaft, tripleSource).length === 2
                 && !Store.isEffectivelyRevealed(thirdFloor, 'floor'));
             Store.deleteTransition(tripleShaft.id);
@@ -911,7 +913,7 @@
             check('transition : point rendu et inspecteur multi-étages',
                 document.querySelectorAll('.transition-endpoint').length === 1
                 && document.querySelector('#inspector-body input[type="text"]').value === 'Escalier technique'
-                && document.getElementById('inspector-body').textContent.includes('Points de passage'));
+                && document.getElementById('inspector-body').textContent.includes('Étages raccordés'));
             const endpointElement = document.querySelector('.transition-endpoint');
             const endpointRect = board.getBoundingClientRect();
             endpointElement.dispatchEvent(new PointerEvent('pointerdown', {
@@ -925,8 +927,10 @@
                 clientY: endpointRect.top + 4.5 * endpointRect.height / 16
             }));
             window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 23 }));
-            check('transition : endpoint déplaçable sur la grille',
-                Math.abs(sourceEndpoint.x - 2.5) < 0.2 && Math.abs(sourceEndpoint.y - 4.5) < 0.2);
+            check('transition : liaison déplaçable en bloc sur la grille',
+                Math.abs(sourceEndpoint.x - 2.5) < 0.2 && Math.abs(sourceEndpoint.y - 4.5) < 0.2
+                && stairs.endpoints.every(endpoint => endpoint.x === sourceEndpoint.x
+                    && endpoint.y === sourceEndpoint.y));
             Visibility.render();
             check('visibilité : pions, transitions et marqueur découvert présents',
                 document.getElementById('visibility-tree').textContent.includes('Pions PJ')
