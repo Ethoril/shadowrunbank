@@ -17,6 +17,10 @@ const MapView = (() => {
     let occluderBuilds = 0;
     let lastCameraFeedSignature = '';
     const ROOM_OCCLUSION_CHANNELS = new Set(['optical', 'infrared', 'laser']);
+    // La gaine d'ascenseur générée occulte comme un décor opaque (7.8),
+    // y compris sur les étages qu'elle traverse sans porte.
+    const CABIN_OCCLUSION_CHANNELS = new Set(['optical', 'infrared', 'laser']);
+    const CABIN_COLOR = '#5c6bc0';
 
     const board = () => document.getElementById('board');
     const svgGroup = id => document.getElementById(id);
@@ -263,7 +267,11 @@ const MapView = (() => {
             .filter(ent => Store.getEffectiveState(ent) !== 'offline'
                 && EntityCatalog.get(ent.type).blocksVision.includes(channel))
             .map(ent => [ent.id, ent.x, ent.y, ent.state]);
-        return JSON.stringify([rooms, decors, entities]);
+        const cabins = CABIN_OCCLUSION_CHANNELS.has(channel)
+            ? Store.elevatorCabinsOnFloor(floorId).map(cabin =>
+                [cabin.transition.id, cabin.x, cabin.y, cabin.width, cabin.height, cabin.rotation])
+            : [];
+        return JSON.stringify([rooms, decors, entities, cabins]);
     }
 
     function computeOccluders(floorId, channel) {
@@ -284,6 +292,12 @@ const MapView = (() => {
                 || !EntityCatalog.get(ent.type).blocksVision.includes(channel)) return;
             segments.push(...polygonSegments(orientedRectangle(ent.x, ent.y, 0, 1, 1, true)));
         });
+        if (CABIN_OCCLUSION_CHANNELS.has(channel)) {
+            Store.elevatorCabinsOnFloor(floorId).forEach(cabin => {
+                segments.push(...polygonSegments(orientedRectangle(cabin.x, cabin.y,
+                    cabin.rotation, cabin.width, cabin.height, true)));
+            });
+        }
 
         occluderBuilds += 1;
         occluderCache.set(key, { signature, segments });
@@ -470,6 +484,50 @@ const MapView = (() => {
             });
             (definition.layer === 'floor' ? floorLayer : obstacleLayer).appendChild(div);
         });
+        renderElevatorCabins(obstacleLayer, floor, feed);
+    }
+
+    /* Cabines d'ascenseur générées depuis les transitions (7.8) : la
+       géométrie est celle de `cabin`, la position celle des endpoints.
+       Vue joueur : seulement avec porte sur l'étage courant et transition
+       révélée (ou vue via un flux caméra). Vue MJ : la gaine apparaît sur
+       toute la plage desservie, en fantôme quand il n'y a pas de porte. */
+    function renderElevatorCabins(layer, floor, feed) {
+        const selection = Store.ui.selection;
+        Store.elevatorCabinsOnFloor(floor.id).forEach(cabin => {
+            const transition = cabin.transition;
+            const revealed = Store.isEffectivelyRevealed(transition, 'transition');
+            if (Store.isPlayerView()) {
+                if (!cabin.hasDoor) return;
+                if (!revealed && !(feed && feed.transitionIds.includes(transition.id))) return;
+            }
+            const div = document.createElement('div');
+            div.className = 'decor elevator-cabin'
+                + (cabin.hasDoor ? '' : ' ghost')
+                + (Store.isPlayerView() || revealed ? '' : ' unrevealed')
+                + (selection && selection.kind === 'transition'
+                    && selection.id === transition.id ? ' selected' : '');
+            div.dataset.transitionId = transition.id;
+            div.style.left = (cabin.x * cellPx) + 'px';
+            div.style.top = (cabin.y * cellPx) + 'px';
+            div.style.width = (cabin.width * cellPx) + 'px';
+            div.style.height = (cabin.height * cellPx) + 'px';
+            div.style.color = CABIN_COLOR;
+            div.style.setProperty('--decor-rotation', cabin.rotation + 'deg');
+            div.title = transition.name + (cabin.hasDoor ? '' : ' — gaine sans porte');
+            appendCatalogIcon(div, 'elevator-decor', 'decor-icon', 'ELV', 'decor-label');
+            if (cabin.hasDoor) {
+                const door = document.createElement('div');
+                door.className = 'elevator-cabin-door door-' + cabin.doorSide;
+                div.appendChild(door);
+            }
+            div.addEventListener('pointerdown', event => {
+                event.stopPropagation();
+                Editor.onTransitionPointerDown(event, transition.id,
+                    cabin.endpoint ? cabin.endpoint.id : null);
+            });
+            layer.appendChild(div);
+        });
     }
 
     function renderTransitions(now, snapshot) {
@@ -488,8 +546,13 @@ const MapView = (() => {
             : Store.visibleTransitions(floor.id);
         transitions.forEach(transition => {
             transition.endpoints.filter(endpoint => endpoint.floorId === floor.id).forEach(endpoint => {
+                // Sans porte, l'arrêt n'existe pas pour les joueurs : la gaine
+                // seule occupe l'étage (cabine fantôme côté MJ).
+                const doorless = transition.type === 'elevator' && endpoint.hasDoor === false;
+                if (doorless && Store.isPlayerView()) return;
                 const div = document.createElement('div');
                 div.className = 'transition-endpoint state-' + transition.state
+                    + (doorless ? ' no-door' : '')
                     + (Store.ui.selection && Store.ui.selection.kind === 'transition'
                         && Store.ui.selection.id === transition.id ? ' selected' : '')
                     + (Store.isPlayerView() || Store.isEffectivelyRevealed(transition, 'transition') ? '' : ' unrevealed');
@@ -504,6 +567,18 @@ const MapView = (() => {
                     div.classList.add('has-icon');
                     const image = appendCatalogIcon(div, transitionIcon, 'transition-icon', '', 'transition-label');
                     if (image) image.addEventListener('error', () => div.classList.remove('has-icon'), { once: true });
+                }
+                if (transition.type === 'stairs') {
+                    // 7.9 : l'icône reflète le sens autorisé depuis cet endpoint.
+                    const exit = Store.stairsExitDirection(transition, endpoint);
+                    const badge = document.createElement('span');
+                    badge.className = 'transition-direction' + (exit ? '' : ' blocked');
+                    badge.textContent = exit === 'up' ? '↑'
+                        : exit === 'down' ? '↓' : exit === 'both' ? '⇅' : '✕';
+                    div.appendChild(badge);
+                    div.title += exit === 'up' ? ' — monte'
+                        : exit === 'down' ? ' — descend'
+                        : exit ? '' : ' — sans issue depuis cet étage';
                 }
                 div.addEventListener('pointerdown', event => {
                     event.stopPropagation();
@@ -904,6 +979,12 @@ const MapView = (() => {
             div.style.top = (y * cellPx) + 'px';
             div.classList.add('dragging');
         }
+        // La gaine suit son endpoint pendant le drag (coordonnées partagées).
+        const cabin = document.querySelector(`.elevator-cabin[data-transition-id="${transitionId}"]`);
+        if (cabin) {
+            cabin.style.left = (x * cellPx) + 'px';
+            cabin.style.top = (y * cellPx) + 'px';
+        }
     }
 
     function updateSelectionClasses() {
@@ -920,7 +1001,7 @@ const MapView = (() => {
             element.classList.toggle('selected', !!selection
                 && selection.kind === 'token' && selection.id === element.dataset.id);
         });
-        document.querySelectorAll('.transition-endpoint[data-transition-id]').forEach(element => {
+        document.querySelectorAll('.transition-endpoint[data-transition-id], .elevator-cabin[data-transition-id]').forEach(element => {
             element.classList.toggle('selected', !!selection
                 && selection.kind === 'transition'
                 && selection.id === element.dataset.transitionId);
