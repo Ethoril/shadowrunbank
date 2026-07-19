@@ -11,6 +11,28 @@ const Exploration = (() => {
         return !!room && Store.roomAt(item.floorId, Math.floor(item.x), Math.floor(item.y)) === room;
     }
 
+    /* Un décor (porte, vitre…) est souvent posé à cheval sur un mur : son
+       centre peut tomber côté voisin alors qu'une partie de son rectangle
+       déborde bien dans la pièce du PJ. On teste donc toutes les cases
+       couvertes par son empreinte (rotation à 90° près) plutôt qu'un point
+       unique — même logique que `elevatorDoorTouchesRoom` pour les cabines. */
+    function decorTouchesRoom(decor, room) {
+        if (!room) return false;
+        const quarterTurn = Math.abs(Math.round(decor.rotation / 90)) % 2 === 1;
+        const halfWidth = (quarterTurn ? decor.height : decor.width) / 2;
+        const halfHeight = (quarterTurn ? decor.width : decor.height) / 2;
+        const minCol = Math.floor(decor.x - halfWidth);
+        const maxCol = Math.ceil(decor.x + halfWidth) - 1;
+        const minRow = Math.floor(decor.y - halfHeight);
+        const maxRow = Math.ceil(decor.y + halfHeight) - 1;
+        for (let col = minCol; col <= maxCol; col++) {
+            for (let row = minRow; row <= maxRow; row++) {
+                if (Store.roomAt(decor.floorId, col, row) === room) return true;
+            }
+        }
+        return false;
+    }
+
     function isAutomaticallyDiscovered(entity) {
         return EntityCatalog.get(entity.type).autoDiscover === true;
     }
@@ -61,7 +83,7 @@ const Exploration = (() => {
             }
         });
         Store.floorDecors(token.floorId).forEach(decor => {
-            if (!inSameRoom(decor, room)) return;
+            if (!decorTouchesRoom(decor, room)) return;
             if (Store.addDiscovery('decor', decor, token.id)) {
                 discovered.push({ kind: 'decor', id: decor.id });
             }

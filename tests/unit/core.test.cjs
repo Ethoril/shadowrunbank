@@ -698,6 +698,24 @@ test('entrer dans une salle révèle les catégories évidentes et garde les aut
         'un ascenseur éloigné reste caché');
 });
 
+test('une porte à cheval sur un mur est révélée dès qu’une partie de son empreinte touche la salle', () => {
+    const { Store, Exploration } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[1];
+    const roomA = Store.addRoom(floor.id);
+    Store.paintCell(roomA, 5, 7);
+    const roomB = Store.addRoom(floor.id);
+    Store.paintCell(roomB, 6, 7);
+    // Porte 1×0,35 centrée sur la frontière : son centre tombe dans la salle
+    // B, mais la moitié de son rectangle déborde bien dans la salle A.
+    const door = Store.addDecor('opaque_door', floor.id, 6, 7.5);
+    assert.equal(Store.roomAt(floor.id, 6, 7).id, roomB.id);
+    const token = Store.addToken(floor.id, 5, 7);
+    Exploration.discoverFromToken(token);
+    assert.equal(Store.isDiscovered('decor', door.id), true,
+        'le PJ est dans la salle A, qui touche l’empreinte de la porte');
+});
+
 test('un décor lié à un contrôle d’accès reflète son état effectif', () => {
     const { Store } = loadApplicationCore();
     Store.load();
