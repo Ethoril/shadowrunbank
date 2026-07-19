@@ -874,8 +874,9 @@
                 && Store.ui.currentFloorId === phase6TargetFloor.id);
             check('transition : déplacement de pion sans écriture du plan principal',
                 plan.updatedAt === planBeforeTokenTravel);
-            check('transition : passage et étage d’arrivée découverts',
-                Store.isDiscovered('transition', stairs.id)
+            check('transition : points traversés et étage d’arrivée découverts',
+                Store.isEndpointRevealed(stairs, sourceEndpoint)
+                && Store.isEndpointRevealed(stairs, targetEndpoint)
                 && Store.isDiscovered('floor', phase6TargetFloor.id));
 
             // 7.9 : le sens `up` n'autorise que l'étage bas (source) vers le haut.

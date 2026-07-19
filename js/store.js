@@ -582,6 +582,7 @@ const Store = (() => {
         try {
             const storedDiscoveries = JSON.parse(localStorage.getItem(DISCOVERIES_KEY) || '[]');
             discoveries = Array.isArray(storedDiscoveries) ? storedDiscoveries.filter(isPlainObject) : [];
+            if (migrateTransitionDiscoveries()) persistDiscoveries();
         } catch (error) {
             discoveries = [];
         }
@@ -1235,11 +1236,15 @@ const Store = (() => {
     }
 
     /* Un point de passage est visible aux joueurs s'il est dévoilé
-       individuellement par le MJ, ou si un pion a découvert la transition
-       (la découverte reste au niveau transition → révèle tous ses points).
+       individuellement par le MJ, ou si un pion a découvert CE point
+       (en l'empruntant ou en voyant la cabine d'ascenseur de son étage).
+       Les anciennes découvertes au niveau transition sont migrées vers
+       les points de leur étage au chargement ; la clause de repli couvre
+       un enregistrement pas encore migré (plan distant pas encore reçu).
        Le flux caméra, temporaire, est géré au niveau transition côté carte. */
     function isEndpointRevealed(transition, endpoint) {
         return !!(endpoint && (endpoint.revealed
+            || isDiscovered('endpoint', endpoint.id)
             || (transition && isDiscovered('transition', transition.id))));
     }
 
@@ -1261,8 +1266,7 @@ const Store = (() => {
     function isEffectivelyRevealed(item, kind) {
         if (kind === 'transition') {
             return !!(item && ((Array.isArray(item.endpoints)
-                    && item.endpoints.some(endpoint => endpoint.revealed))
-                || isDiscovered('transition', item.id)
+                    && item.endpoints.some(endpoint => isEndpointRevealed(item, endpoint)))
                 || (isPlayerView() && isCameraFeedRevealed(item, kind))));
         }
         return !!(item && (item.revealed || isDiscovered(kind, item.id)
@@ -1274,7 +1278,65 @@ const Store = (() => {
     }
     function applyRemoteDiscoveries(remoteDiscoveries) {
         discoveries = Array.isArray(remoteDiscoveries) ? remoteDiscoveries.filter(isPlainObject) : [];
+        migrateTransitionDiscoveries();
         persistDiscoveries();
+    }
+
+    /* Migration : la découverte d'une liaison était enregistrée au niveau
+       transition et révélait d'un coup TOUS ses points sur tous les étages,
+       même jamais visités. Elle est désormais par point de passage. Les
+       anciens enregistrements sont éclatés vers les seuls points de l'étage
+       où la découverte a eu lieu (`floorId` de l'enregistrement) ; les
+       autres sorties redeviennent cachées. Un enregistrement dont la
+       transition n'est pas (encore) dans le plan est conservé tel quel et
+       sera migré à la prochaine passe. Côté MJ connecté, la conversion est
+       poussée au cloud pour que tous les écrans convergent. */
+    function migrateTransitionDiscoveries() {
+        const legacy = discoveries.filter(discovery => discovery.kind === 'transition'
+            && findTransition(discovery.elementId));
+        if (!legacy.length) return false;
+        const additions = [];
+        legacy.forEach(discovery => {
+            const transition = findTransition(discovery.elementId);
+            transition.endpoints
+                .filter(endpoint => endpoint.floorId === discovery.floorId)
+                .forEach(endpoint => {
+                    if (isDiscovered('endpoint', endpoint.id)) return;
+                    additions.push({
+                        id: discoveryKey('endpoint', endpoint.id), kind: 'endpoint',
+                        elementId: endpoint.id, floorId: endpoint.floorId,
+                        discoveredBy: discovery.discoveredBy, discoveredAt: discovery.discoveredAt
+                    });
+                });
+        });
+        const legacyIds = new Set(legacy.map(discovery => discovery.id));
+        discoveries = discoveries.filter(discovery => !legacyIds.has(discovery.id)).concat(additions);
+        if (cloudActive && window.Cloud && !ui.readOnly) {
+            if (typeof window.Cloud.saveDiscovery === 'function') {
+                additions.forEach(discovery => window.Cloud.saveDiscovery(cloneData(discovery))
+                    .catch(error => console.warn('Migration de découverte conservée localement', error)));
+            }
+            if (typeof window.Cloud.deleteDiscoveries === 'function') {
+                window.Cloud.deleteDiscoveries([...legacyIds]).catch(error =>
+                    console.warn('Suppression des découvertes migrées différée', error));
+            }
+        }
+        return true;
+    }
+
+    /* Retire une découverte automatique précise (œil MJ « cacher » sur un
+       élément que les pions avaient découvert). */
+    function removeDiscovery(kind, elementId) {
+        const key = discoveryKey(kind, elementId);
+        const before = discoveries.length;
+        discoveries = discoveries.filter(discovery => discovery.id !== key);
+        if (discoveries.length === before) return false;
+        persistDiscoveries();
+        if (cloudActive && window.Cloud && typeof window.Cloud.deleteDiscoveries === 'function' && !ui.readOnly) {
+            window.Cloud.deleteDiscoveries([key]).catch(error =>
+                console.warn('Suppression de la découverte différée', error));
+        }
+        return true;
     }
     function addDiscovery(kind, item, tokenId, floorId) {
         if (!item || isDiscovered(kind, item.id)) return false;
@@ -2022,7 +2084,7 @@ const Store = (() => {
         visibleFloors, visibleRooms, visibleEntities, visibleDecors, visibleTokens, visibleTransitions,
         ensureVisibleView,
         applyRemoteTokens, saveToken, commitTokenPosition, addToken, duplicateToken, deleteToken,
-        applyRemoteDiscoveries, addDiscovery, resetDiscoveries,
+        applyRemoteDiscoveries, addDiscovery, removeDiscovery, resetDiscoveries,
         addFloor, deleteFloor, moveFloor,
         addRoom, paintCell, eraseCell, deleteRoom, roomAt,
         addDecor, duplicateDecor, deleteDecor,

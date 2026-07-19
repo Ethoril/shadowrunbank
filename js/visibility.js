@@ -20,20 +20,27 @@ const Visibility = (() => {
     }
 
     /* Case à cocher œil, mise à jour sur place (pas de reconstruction
-       de l'arbre → pas de saut de défilement). `obj` porte `revealed`. */
-    function eyeButton(obj, title, property = 'revealed') {
+       de l'arbre → pas de saut de défilement). `obj` porte `revealed`.
+       L'œil reflète la visibilité EFFECTIVE (révélé MJ ou découvert par
+       un pion) ; « cacher » un élément découvert retire aussi sa
+       découverte, sinon il resterait visible des joueurs. */
+    function eyeButton(obj, title, property = 'revealed', discovery = null) {
+        const isOn = () => !!obj[property]
+            || !!(discovery && Store.isDiscovered(discovery.kind, discovery.elementId));
         const btn = document.createElement('button');
         btn.className = 'vis-eye';
         btn.title = title;
         const paint = () => {
-            btn.classList.toggle('revealed', !!obj[property]);
-            btn.textContent = obj[property] ? '👁' : '🚫';
-            btn.setAttribute('aria-pressed', obj[property] ? 'true' : 'false');
+            btn.classList.toggle('revealed', isOn());
+            btn.textContent = isOn() ? '👁' : '🚫';
+            btn.setAttribute('aria-pressed', isOn() ? 'true' : 'false');
         };
         paint();
         btn.addEventListener('click', e => {
             e.stopPropagation();
-            obj[property] = !obj[property];
+            const next = !isOn();
+            obj[property] = next;
+            if (!next && discovery) Store.removeDiscovery(discovery.kind, discovery.elementId);
             if (property === 'visible' && obj.id && Store.findToken(obj.id)) Store.saveToken(obj);
             else Store.touch();
             paint();
@@ -66,7 +73,8 @@ const Visibility = (() => {
         }
         el.appendChild(caret);
 
-        el.appendChild(eyeButton(revealObj, eyeTitle, property));
+        el.appendChild(eyeButton(revealObj, eyeTitle, property,
+            discoveryKind ? { kind: discoveryKind, elementId: discoveryElementId } : null));
 
         const label = document.createElement('span');
         label.className = 'vis-label';
@@ -224,7 +232,7 @@ const Visibility = (() => {
                 const label = transition.name + (letter ? ' ' + letter : '');
                 const transitionRow = row(2, floor.id + '_' + transition.id + '_' + endpoint.id, false,
                     endpoint, 'Révéler / cacher ce point de passage', label, '#ffe66d',
-                    selectOnMap('transition', transition.id), 'revealed', 'transition', transition.id);
+                    selectOnMap('transition', transition.id), 'revealed', 'endpoint', endpoint.id);
                 if (isSelected('transition', transition.id)) transitionRow.classList.add('selected');
                 container.appendChild(transitionRow);
             });
