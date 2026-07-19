@@ -680,6 +680,7 @@ test('les couches transparentes laissent sélectionner et déplacer les élémen
     }, ids.token);
     await page.mouse.move(tokenCenter.x, tokenCenter.y);
     await page.mouse.down();
+    await page.waitForTimeout(200);
     await page.mouse.move(tokenCenter.x + 80, tokenCenter.y + 45, { steps: 5 });
     await page.mouse.up();
     const after = await page.evaluate(id => {
@@ -701,6 +702,7 @@ test('les couches transparentes laissent sélectionner et déplacer les élémen
     }, ids.token);
     await page.mouse.move(playerTokenCenter.x, playerTokenCenter.y);
     await page.mouse.down();
+    await page.waitForTimeout(200);
     await page.mouse.move(playerTokenCenter.x - 70, playerTokenCenter.y + 35, { steps: 5 });
     await page.mouse.up();
     const playerAfter = await page.evaluate(id => {
@@ -746,6 +748,9 @@ test('les poignées règlent directement faisceaux, zones et seuils', async () =
         }, { x: gridX, y: gridY });
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.mouse.down();
+        // Le glisser réel n'engage qu'après un court maintien (DRAG_HOLD_MS) :
+        // on le simule pour reproduire un geste humain, pas un saut instantané.
+        await page.waitForTimeout(200);
         await page.mouse.move(target.x, target.y, { steps: 6 });
         await page.mouse.up();
     }
@@ -859,6 +864,9 @@ test('un geste tactile respecte le verrou puis confirme une transition', async (
         await cdp.send('Input.dispatchTouchEvent', {
             type: 'touchStart', touchPoints: [point(start.x, start.y)]
         });
+        // Le glisser réel n'engage qu'après un court maintien (DRAG_HOLD_MS) :
+        // on le simule pour reproduire un geste humain, pas un saut instantané.
+        await new Promise(resolve => setTimeout(resolve, 200));
         for (let step = 1; step <= 5; step += 1) {
             const ratio = step / 5;
             await cdp.send('Input.dispatchTouchEvent', {

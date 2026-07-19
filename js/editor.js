@@ -10,11 +10,12 @@ const Editor = (() => {
     let dragSession = null;  // déplacement d'élément, waypoint ou poignée de couverture
     let clipboard = null;    // { kind: 'entity'|'decor', data } — non persisté
 
-    // Distance (px écran) à franchir avant qu'un pointerdown sur un élément
-    // ne se transforme en déplacement. Sans ça, le moindre tremblement de
-    // souris au clic (ex. pour sélectionner et régler dans l'inspecteur)
-    // décale l'élément sur la carte.
-    const DRAG_THRESHOLD_PX = 5;
+    // Délai (ms) de maintien du pointeur avant qu'un pointerdown sur un
+    // élément ne se transforme en déplacement. Un simple tap/clic pour
+    // sélectionner et régler dans l'inspecteur relâche avant ce délai et ne
+    // décale donc jamais l'élément — y compris au doigt sur tablette, où le
+    // contact bouge de plusieurs pixels sans intention de glisser.
+    const DRAG_HOLD_MS = 150;
 
     /* --- Outils --- */
     function setTool(tool) {
@@ -605,9 +606,7 @@ const Editor = (() => {
         }
         if (dragSession) {
             if (!dragSession.thresholdPassed) {
-                const dx = e.clientX - dragSession.startX;
-                const dy = e.clientY - dragSession.startY;
-                if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+                if (Date.now() - dragSession.downTime < DRAG_HOLD_MS) return;
                 dragSession.thresholdPassed = true;
             }
             const pos = MapView.gridPosFromEvent(e);
@@ -708,7 +707,7 @@ const Editor = (() => {
         // Pas de drag en vue joueur, ni pendant une ronde (l'animation pilote la position)
         if (!Store.isPlayerView() && !(ent && ent.patrol && ent.patrol.moving)) {
             Store.beginTransaction('Déplacer un dispositif');
-            dragSession = { kind: 'entity', id: entityId, moved: false, startX: e.clientX, startY: e.clientY };
+            dragSession = { kind: 'entity', id: entityId, moved: false, downTime: Date.now() };
             capturePointer(e);
         }
         MapView.updateSelectionClasses();
@@ -720,7 +719,7 @@ const Editor = (() => {
         Store.ui.selection = { kind: 'decor', id: decorId };
         if (!Store.isPlayerView()) {
             Store.beginTransaction('Déplacer un décor');
-            dragSession = { kind: 'decor', id: decorId, moved: false, startX: e.clientX, startY: e.clientY };
+            dragSession = { kind: 'decor', id: decorId, moved: false, downTime: Date.now() };
             capturePointer(e);
         }
         MapView.updateSelectionClasses();
@@ -734,7 +733,7 @@ const Editor = (() => {
         Store.ui.selection = { kind: 'token', id: tokenId };
         const playerCanMove = Store.ui.readOnly && !Store.ui.preview && token.playerMovable && !token.locked;
         if (!Store.isPlayerView() || playerCanMove) {
-            dragSession = { kind: 'token', id: tokenId, moved: false, startX: e.clientX, startY: e.clientY };
+            dragSession = { kind: 'token', id: tokenId, moved: false, downTime: Date.now() };
             capturePointer(e);
         }
         MapView.updateSelectionClasses();
@@ -747,7 +746,7 @@ const Editor = (() => {
         // Cabine fantôme sans endpoint sur cet étage : sélection seule.
         if (endpointId && !Store.isPlayerView()) {
             Store.beginTransaction('Déplacer une transition');
-            dragSession = { kind: 'transition', id: transitionId, endpointId, moved: false, startX: e.clientX, startY: e.clientY };
+            dragSession = { kind: 'transition', id: transitionId, endpointId, moved: false, downTime: Date.now() };
             capturePointer(e);
         }
         MapView.updateSelectionClasses();
@@ -769,7 +768,7 @@ const Editor = (() => {
         if (ent.patrol.moving) Store.stopPatrol(ent);
         Store.ui.selection = { kind: 'entity', id: entityId };
         Store.beginTransaction('Déplacer un waypoint');
-        dragSession = { kind: 'waypoint', id: entityId, index, moved: false, startX: e.clientX, startY: e.clientY };
+        dragSession = { kind: 'waypoint', id: entityId, index, moved: false, downTime: Date.now() };
         capturePointer(e);
         Inspector.render();
     }
@@ -787,8 +786,7 @@ const Editor = (() => {
             id: entityId,
             handle,
             moved: false,
-            startX: e.clientX,
-            startY: e.clientY,
+            downTime: Date.now(),
             hadMovingPatrol: !!(ent.patrol && ent.patrol.moving),
             hadSweep: !!ent.coverage.sweep,
             frozenDirection: Anim.coverageDirection(ent, Date.now())

@@ -224,11 +224,13 @@
             // 6. Drag d'entité en mode sélection
             const camDiv = document.querySelector(`.entity[data-id="${cam.id}"]`);
             camDiv.dispatchEvent(evt('pointerdown', 12, 6));
+            await new Promise(resolve => setTimeout(resolve, 200)); // Editor.DRAG_HOLD_MS
             window.dispatchEvent(evt('pointermove', 14, 8));
             window.dispatchEvent(new PointerEvent('pointerup'));
             check('drag déplace la caméra', Math.abs(cam.x - 14) < 0.5 && Math.abs(cam.y - 8) < 0.5);
             const movedCamDiv = document.querySelector(`.entity[data-id="${cam.id}"]`);
             movedCamDiv.dispatchEvent(evt('pointerdown', 14, 8));
+            await new Promise(resolve => setTimeout(resolve, 200)); // Editor.DRAG_HOLD_MS
             window.dispatchEvent(evt('pointermove', 40, 30));
             window.dispatchEvent(new PointerEvent('pointerup'));
             check('drag reste entièrement dans la grille', cam.x === 23.5 && cam.y === 15.5);
@@ -473,6 +475,7 @@
             });
             const counterDiv = document.querySelector(`.decor[data-id="${counter.id}"]`);
             counterDiv.dispatchEvent(decorEvt('pointerdown', 14, 5));
+            await new Promise(resolve => setTimeout(resolve, 200)); // Editor.DRAG_HOLD_MS
             window.dispatchEvent(decorEvt('pointermove', 15, 6));
             window.dispatchEvent(new PointerEvent('pointerup'));
             check('drag déplace le décor', Math.abs(counter.x - 15) < 0.2 && Math.abs(counter.y - 6) < 0.2);
@@ -921,6 +924,7 @@
                 clientX: endpointRect.left + sourceEndpoint.x * endpointRect.width / 24,
                 clientY: endpointRect.top + sourceEndpoint.y * endpointRect.height / 16
             }));
+            await new Promise(resolve => setTimeout(resolve, 200)); // Editor.DRAG_HOLD_MS
             window.dispatchEvent(new PointerEvent('pointermove', {
                 bubbles: true, pointerId: 23,
                 clientX: endpointRect.left + 2.5 * endpointRect.width / 24,
