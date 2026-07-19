@@ -267,6 +267,7 @@ const Inspector = (() => {
 
         body.appendChild(revealToggle('Dispositif', ent, () => MapView.renderEntities()));
 
+        if (ent.type === 'network_node') renderLinkedDevicesSection(body, ent);
         if (def.canPatrol) renderPatrolSection(body, ent);
         if (def.coverageType !== 'none') renderCoverageSection(body, ent, def);
 
@@ -280,6 +281,64 @@ const Inspector = (() => {
         }));
         actions.appendChild(dangerButton("Supprimer", deleteSelectedEntity));
         body.appendChild(actions);
+    }
+
+    /* --- Section appareils reliés (nœuds réseau) --- */
+    // Un nœud peut desservir des appareils sur n'importe quel étage : la liste
+    // couvre tout le plan, triée par étage puis par nom.
+    function renderLinkedDevicesSection(body, node) {
+        body.appendChild(sep());
+        body.appendChild(sectionTitle('🔌 Appareils reliés'));
+
+        const floorOrder = new Map(Store.getPlan().floors.map(f => [f.id, f.order]));
+        const devices = Store.getPlan().entities
+            .filter(e => e.networkId === node.id)
+            .sort((a, b) => {
+                const fa = floorOrder.get(a.floorId) || 0;
+                const fb = floorOrder.get(b.floorId) || 0;
+                return fa - fb || a.name.localeCompare(b.name);
+            });
+
+        if (!devices.length) {
+            const hint = document.createElement('div');
+            hint.className = 'inspector-hint';
+            hint.textContent = 'Aucun appareil relié à ce nœud.';
+            body.appendChild(hint);
+            return;
+        }
+
+        const list = document.createElement('div');
+        list.className = 'waypoint-list';
+        devices.forEach(device => {
+            const row = document.createElement('div');
+            row.className = 'waypoint-row';
+            const label = document.createElement('span');
+            const floor = Store.findFloor(device.floorId);
+            label.textContent = device.name + (floor ? ' — ' + floor.name : '');
+            label.title = EntityCatalog.get(device.type).name;
+            row.appendChild(label);
+            const controls = document.createElement('div');
+            controls.className = 'waypoint-actions';
+            const goto = secondaryButton('→', () => {
+                if (Store.findFloor(device.floorId)) Store.ui.currentFloorId = device.floorId;
+                Store.ui.selection = { kind: 'entity', id: device.id };
+                App.renderAll();
+                requestAnimationFrame(() => MapView.focusElement('entity', device.id));
+            });
+            goto.title = 'Sélectionner cet appareil';
+            const unlink = dangerButton('×', () => {
+                device.networkId = '';
+                Store.touch();
+                MapView.renderEntities();
+                render();
+            });
+            unlink.title = 'Délier du nœud';
+            controls.appendChild(goto);
+            controls.appendChild(unlink);
+            row.appendChild(controls);
+            list.appendChild(row);
+        });
+        body.appendChild(list);
     }
 
     /* --- Section ronde (types mobiles) --- */
