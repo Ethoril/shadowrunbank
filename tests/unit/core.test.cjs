@@ -38,7 +38,7 @@ function loadApplicationCore() {
         window: {}
     });
     context.window = context;
-    ['catalog.js', 'anim.js', 'store.js', 'map.js'].forEach(file => {
+    ['catalog.js', 'anim.js', 'store.js', 'map.js', 'exploration.js'].forEach(file => {
         vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', file), 'utf8'), context, {
             filename: file
         });
@@ -48,7 +48,8 @@ function loadApplicationCore() {
         Store: vm.runInContext('Store', context),
         Anim: vm.runInContext('Anim', context),
         MapView: vm.runInContext('MapView', context),
-        EntityCatalog: vm.runInContext('EntityCatalog', context)
+        EntityCatalog: vm.runInContext('EntityCatalog', context),
+        Exploration: vm.runInContext('Exploration', context)
     };
 }
 
@@ -297,6 +298,278 @@ test('le flux hérite du piratage réseau et les mobiles disparaissent en sortan
 
     node.state = 'active';
     assert.equal(MapView.cameraFeedSnapshot(floor.id, 0).cameraIds.length, 0);
+});
+
+test('la gaine d’un ascenseur partage strictement ses coordonnées (7.8)', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const elevator = Store.addTransition('elevator', 'Ascenseur de service');
+    assert.deepEqual({ ...elevator.cabin }, { width: 2, height: 2, rotation: 0, doorSide: 'south' });
+    assert.equal(elevator.minFloorOrder, null);
+    assert.equal(elevator.maxFloorOrder, null);
+
+    const first = Store.addTransitionEndpoint(elevator, floors[0].id, 12, 8);
+    const second = Store.addTransitionEndpoint(elevator, floors[1].id, 3, 4);
+    assert.equal(first.hasDoor, true);
+    assert.equal(second.x, 12);
+    assert.equal(second.y, 8);
+    // Un seul arrêt par étage.
+    assert.equal(Store.addTransitionEndpoint(elevator, floors[0].id, 5, 5), null);
+});
+
+test('créer un étage étend les ascenseurs à borne automatique (7.8)', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const auto = Store.addTransition('elevator', 'Gaine auto');
+    Store.addTransitionEndpoint(auto, floors[0].id, 12, 8);
+    const frozen = Store.addTransition('elevator', 'Gaine figée');
+    Store.addTransitionEndpoint(frozen, floors[0].id, 4, 4);
+    frozen.maxFloorOrder = floors[floors.length - 1].order;
+
+    const added = Store.addFloor('Niv -3 : Annexe');
+    const extended = auto.endpoints.find(endpoint => endpoint.floorId === added.id);
+    assert.ok(extended, 'la gaine automatique doit desservir le nouvel étage');
+    assert.equal(extended.hasDoor, true, 'porte ouverte par défaut, à retirer par le MJ');
+    assert.equal(extended.x, 12);
+    assert.equal(extended.y, 8);
+    assert.ok(!frozen.endpoints.some(endpoint => endpoint.floorId === added.id),
+        'une borne figée ne doit pas être dépassée');
+});
+
+test('resserrer une borne de desserte supprime les arrêts hors plage (7.8)', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const elevator = Store.addTransition('elevator', 'Ascenseur principal');
+    floors.forEach(floor => Store.addTransitionEndpoint(elevator, floor.id, 12, 8));
+    assert.equal(elevator.endpoints.length, 3);
+
+    const dropped = Store.elevatorEndpointsOutOfRange(elevator, 'max', floors[1].order);
+    assert.equal(dropped.length, 1);
+    assert.equal(dropped[0].floorId, floors[2].id);
+    const removed = Store.setElevatorBound(elevator, 'max', floors[1].order);
+    assert.equal(removed.length, 1);
+    assert.equal(elevator.endpoints.length, 2);
+    assert.equal(elevator.maxFloorOrder, floors[1].order);
+
+    // La cabine reste calculée sur les étages desservis, avec ou sans porte.
+    elevator.endpoints[1].hasDoor = false;
+    const cabins = Store.elevatorCabinsOnFloor(floors[1].id);
+    assert.equal(cabins.length, 1);
+    assert.equal(cabins[0].hasDoor, false);
+    assert.equal(Store.elevatorCabinsOnFloor(floors[2].id).length, 0);
+});
+
+test('la gaine générée occulte comme un décor opaque (7.8)', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[0];
+    const from = { x: 10, y: 5 }, to = { x: 14, y: 5 };
+    assert.equal(MapView.isLineBlocked(floor.id, from, to, 'optical', 0), false);
+    const elevator = Store.addTransition('elevator', 'Gaine opaque');
+    Store.addTransitionEndpoint(elevator, floor.id, 12, 5);
+    assert.equal(MapView.isLineBlocked(floor.id, from, to, 'optical', 0), true);
+});
+
+test('un escalier relie exactement deux endpoints (7.10)', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const stairs = Store.addTransition('stairs', 'Escalier de service');
+    assert.equal(stairs.direction, 'both');
+    Store.addTransitionEndpoint(stairs, floors[0].id, 4, 6);
+    Store.addTransitionEndpoint(stairs, floors[1].id, 4, 2);
+    assert.equal(Store.addTransitionEndpoint(stairs, floors[2].id, 4, 4), null);
+    assert.equal(stairs.endpoints.length, 2);
+
+    // Une liaison à plus de deux endpoints ne peut pas devenir un escalier.
+    const elevator = Store.addTransition('elevator', 'Grande gaine');
+    floors.forEach(floor => Store.addTransitionEndpoint(elevator, floor.id, 10, 10));
+    assert.equal(Store.setTransitionType(elevator, 'stairs'), false);
+    assert.equal(elevator.type, 'elevator');
+});
+
+test('le sens d’un escalier s’applique aux deux étages reliés (7.9)', () => {
+    const { Store, Exploration } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors(); // order croissant = étage plus bas
+    const stairs = Store.addTransition('stairs', 'Escalier borgne');
+    const upper = Store.addTransitionEndpoint(stairs, floors[0].id, 4, 6);
+    const lower = Store.addTransitionEndpoint(stairs, floors[1].id, 4, 2);
+
+    assert.equal(Store.stairsExitDirection(stairs, upper), 'down');
+    assert.equal(Store.stairsExitDirection(stairs, lower), 'up');
+
+    Store.setStairsDirection(stairs, 'up');
+    assert.equal(Store.stairsExitDirection(stairs, upper), null);
+    assert.equal(Store.stairsExitDirection(stairs, lower), 'up');
+    assert.equal(Exploration.destinationsFor(stairs, upper).length, 0);
+    assert.deepEqual(Array.from(Exploration.destinationsFor(stairs, lower), item => item.id), [upper.id]);
+
+    Store.setStairsDirection(stairs, 'down');
+    assert.deepEqual(Array.from(Exploration.destinationsFor(stairs, upper), item => item.id), [lower.id]);
+    assert.equal(Exploration.destinationsFor(stairs, lower).length, 0);
+});
+
+test('l’ancien bidirectional:false d’un escalier migre en sens vertical (7.9)', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const base = JSON.parse(Store.exportJson());
+    const [upperFloor, lowerFloor] = [...base.floors].sort((a, b) => a.order - b.order);
+    base.transitions.push({
+        id: 'tr_legacy', type: 'stairs', name: 'Descente legacy', bidirectional: false,
+        state: 'active', revealed: false, accessEntityId: '',
+        endpoints: [
+            { id: 'ep_a', floorId: upperFloor.id, x: 4, y: 6, label: '' },
+            { id: 'ep_b', floorId: lowerFloor.id, x: 4, y: 2, label: '' }
+        ]
+    });
+    const prepared = Store.preparePlan(base).plan;
+    const migrated = prepared.transitions.find(item => item.id === 'tr_legacy');
+    // endpoints[0] (étage haut) était le seul départ autorisé : on descend.
+    assert.equal(migrated.direction, 'down');
+    assert.equal(migrated.bidirectional, undefined);
+});
+
+test('un arrêt d’ascenseur sans porte n’est jamais une destination (7.8)', () => {
+    const { Store, Exploration } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const elevator = Store.addTransition('elevator', 'Monte-charge');
+    const a = Store.addTransitionEndpoint(elevator, floors[0].id, 12, 8);
+    const b = Store.addTransitionEndpoint(elevator, floors[1].id, 12, 8);
+    const c = Store.addTransitionEndpoint(elevator, floors[2].id, 12, 8);
+    c.hasDoor = false;
+    assert.deepEqual(Array.from(Exploration.destinationsFor(elevator, a), item => item.id), [b.id]);
+
+    const token = Store.addToken(floors[0].id, 12, 8);
+    assert.equal(Exploration.moveThroughTransition(token, elevator, a, c), false);
+    assert.equal(Exploration.moveThroughTransition(token, elevator, a, b), true);
+    assert.equal(token.floorId, floors[1].id);
+});
+
+test('la purge des décors escalier / cabine est explicite et complète (7.10)', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    Store.addDecor('elevator_decor', floors[1].id, 5, 5);
+    Store.addDecor('stairs', floors[0].id, 8, 8);
+    const kept = Store.addDecor('counter', floors[0].id, 2, 2);
+
+    const listed = Store.listLegacyTransitionDecors();
+    assert.equal(listed.length, 2);
+    // Récapitulatif trié par étage pour la boîte de confirmation.
+    assert.equal(listed[0].floor.id, floors[0].id);
+    assert.equal(listed[1].floor.id, floors[1].id);
+
+    assert.equal(Store.purgeLegacyTransitionDecors(), 2);
+    assert.equal(Store.listLegacyTransitionDecors().length, 0);
+    assert.ok(Store.findDecor(kept.id), 'les autres décors sont conservés');
+    assert.equal(Store.undo(), 'Supprimer les décors de liaison obsolètes');
+});
+
+test('un nouvel ascenseur dessert tous les étages avec porte par défaut (7.11)', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const elevator = Store.addTransition('elevator', 'Ascenseur des étages pairs');
+    assert.equal(Store.populateElevatorStops(elevator, 12, 8), floors.length);
+    assert.equal(elevator.endpoints.length, floors.length);
+    elevator.endpoints.forEach(endpoint => {
+        assert.equal(endpoint.hasDoor, true);
+        assert.equal(endpoint.x, 12);
+        assert.equal(endpoint.y, 8);
+    });
+    // Idempotent : un second appel ne duplique aucun arrêt.
+    assert.equal(Store.populateElevatorStops(elevator), 0);
+
+    // Le MJ retire ensuite les portes non désirées (étages « impairs »).
+    elevator.endpoints[1].hasDoor = false;
+    const cabins = Store.elevatorCabinsOnFloor(floors[1].id);
+    assert.equal(cabins[0].hasDoor, false, 'la gaine reste présente, sans arrêt praticable');
+
+    // Une desserte bornée ne se peuple que dans sa plage.
+    const partial = Store.addTransition('elevator', 'Ascenseur borné');
+    Store.addTransitionEndpoint(partial, floors[0].id, 4, 4);
+    Store.setElevatorBound(partial, 'max', floors[1].order);
+    assert.equal(Store.populateElevatorStops(partial), 1);
+    assert.ok(!partial.endpoints.some(endpoint => endpoint.floorId === floors[2].id));
+});
+
+test('les bornes figées suivent leurs étages quand les ordres changent (7.8)', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const [a, b] = Store.sortedFloors(); // ordres 0 et 1
+    const elevator = Store.addTransition('elevator', 'Ascenseur borné');
+    Store.addTransitionEndpoint(elevator, a.id, 12, 8);
+    Store.addTransitionEndpoint(elevator, b.id, 12, 8);
+    Store.setElevatorBound(elevator, 'max', b.order); // figée sur l'étage B
+
+    // Un étage hors desserte figée ne peut pas recevoir d'arrêt.
+    const outside = Store.sortedFloors()[2];
+    assert.equal(Store.addTransitionEndpoint(elevator, outside.id, 12, 8), null);
+
+    // Supprimer A renumérote les ordres : la borne continue de désigner B.
+    Store.deleteFloor(a.id);
+    assert.equal(Store.findFloor(b.id).order, 0);
+    assert.equal(elevator.maxFloorOrder, 0);
+
+    // Réordonner B ne change pas les étages desservis : la borne le suit.
+    Store.moveFloor(b.id, 1);
+    assert.equal(Store.findFloor(b.id).order, 1);
+    assert.equal(elevator.maxFloorOrder, 1);
+});
+
+test('une borne dont l’étage disparaît se rabat sur la plage restante (7.8)', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const [a, b] = Store.sortedFloors();
+    const elevator = Store.addTransition('elevator', 'Ascenseur amputé');
+    Store.addTransitionEndpoint(elevator, a.id, 12, 8);
+    Store.addTransitionEndpoint(elevator, b.id, 12, 8);
+    Store.setElevatorBound(elevator, 'max', b.order);
+
+    // L'étage désigné par la borne est supprimé : rabat sur A, sans
+    // étendre la desserte vers les étages qui n'étaient pas servis.
+    Store.deleteFloor(b.id);
+    assert.equal(elevator.maxFloorOrder, Store.findFloor(a.id).order);
+    assert.deepEqual(Array.from(elevator.endpoints, item => item.floorId), [a.id]);
+    assert.equal(Store.elevatorCabinsOnFloor(Store.sortedFloors()[1].id).length, 0);
+});
+
+test('la remise à zéro MJ repart d’une feuille blanche restaurable', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[0];
+    Store.getPlan().revision = 7;
+    Store.addEntity('camera', floor.id, 3, 3, 'Caméra');
+    Store.addDecor('counter', floor.id, 5, 5);
+    const transition = Store.addTransition('stairs', 'Escalier');
+    Store.addTransitionEndpoint(transition, floor.id, 4, 4);
+    const token = Store.addToken(floor.id, 2, 2);
+    Store.addDiscovery('floor', floor, token.id);
+    const nameBefore = Store.getPlan().name;
+    const roomsBefore = Store.getPlan().rooms.length;
+    assert.ok(roomsBefore > 0);
+
+    const fresh = Store.resetPlan();
+    assert.equal(fresh.floors.length, 1);
+    assert.equal(fresh.floors[0].revealed, true);
+    assert.equal(fresh.rooms.length, 0);
+    assert.equal(fresh.entities.length, 0);
+    assert.equal(fresh.decors.length, 0);
+    assert.equal(fresh.transitions.length, 0);
+    assert.equal(fresh.revision, 7, 'la révision cloud est préservée');
+    assert.equal(fresh.name, nameBefore, 'le nom du plan est conservé');
+    assert.equal(Store.getTokens().length, 0);
+    assert.equal(Store.getDiscoveries().length, 0);
+    assert.equal(Store.ui.currentFloorId, fresh.floors[0].id);
+
+    // Le plan (mais pas les pions) reste annulable via l'historique.
+    assert.equal(Store.undo(), 'Tout supprimer');
+    assert.equal(Store.getPlan().rooms.length, roomsBefore);
 });
 
 test('le catalogue expose tous les dispositifs attendus', () => {

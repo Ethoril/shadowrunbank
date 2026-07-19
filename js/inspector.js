@@ -162,6 +162,9 @@ const Inspector = (() => {
             roText('Transition :', transition.name);
             roText('Type :', transitionTypeLabels()[transition.type] || transition.type);
             roText('Statut :', transition.state === 'active' ? 'Active' : 'Hors ligne');
+            if (transition.type === 'stairs') {
+                roText('Sens :', stairsDirectionLabels()[transition.direction] || 'Monte et descend');
+            }
         }
 
         const hint = document.createElement('div');
@@ -746,6 +749,14 @@ const Inspector = (() => {
     }
 
     /* --- Transitions multi-étages --- */
+    function stairsDirectionLabels() {
+        return { both: 'Monte et descend', up: 'Monte uniquement', down: 'Descend uniquement' };
+    }
+
+    function cabinDoorSideLabels() {
+        return { north: 'Nord', south: 'Sud', east: 'Est', west: 'Ouest' };
+    }
+
     function renderTransition(body, transition) {
         if (!transition) { Store.ui.selection = null; return render(); }
         const refresh = (full = false) => {
@@ -761,13 +772,25 @@ const Inspector = (() => {
             transition.name = value; refresh();
         })));
         body.appendChild(field('Nature :', selectInput(transitionTypeLabels(), transition.type, value => {
-            transition.type = value; refresh();
+            if (!Store.setTransitionType(transition, value)) {
+                alert('Un escalier relie exactement deux endpoints : retire des points de passage avant de changer la nature.');
+            }
+            App.renderAll();
         })));
         body.appendChild(field('État :', selectInput({ active: 'Active', offline: 'Hors ligne' },
             transition.state, value => { transition.state = value; refresh(); })));
-        body.appendChild(checkboxField('Bidirectionnelle', transition.bidirectional, value => {
-            transition.bidirectional = value; refresh();
-        }));
+        if (transition.type === 'stairs') {
+            // 7.9 : le sens remplace « bidirectionnelle » pour les escaliers.
+            body.appendChild(field('Sens :', selectInput(stairsDirectionLabels(),
+                transition.direction, value => {
+                    Store.setStairsDirection(transition, value);
+                    App.renderAll();
+                })));
+        } else {
+            body.appendChild(checkboxField('Bidirectionnelle', transition.bidirectional, value => {
+                transition.bidirectional = value; refresh();
+            }));
+        }
         body.appendChild(revealToggle('Transition', transition, () => {
             MapView.renderTransitions(); Visibility.render();
         }));
@@ -780,6 +803,8 @@ const Inspector = (() => {
                 transition.accessEntityId = value; refresh();
             })));
 
+        if (transition.type === 'elevator') renderElevatorSections(body, transition);
+
         body.appendChild(sep());
         body.appendChild(sectionTitle('Points de passage'));
         transition.endpoints.forEach((endpoint, index) => {
@@ -790,6 +815,14 @@ const Inspector = (() => {
             name.textContent = (index + 1) + '. ' + (floor ? floor.name : 'Étage inconnu')
                 + ' · ' + endpoint.x + ',' + endpoint.y;
             line.appendChild(name);
+            if (transition.type === 'elevator') {
+                // 7.8 : sans porte, pas d'arrêt — mais la gaine occupe l'étage.
+                line.appendChild(checkboxField('Porte', endpoint.hasDoor !== false, value => {
+                    endpoint.hasDoor = value;
+                    Store.touch('Modifier une porte d\'ascenseur');
+                    App.renderAll();
+                }));
+            }
             line.appendChild(secondaryButton('Retirer', () => {
                 Store.removeTransitionEndpoint(transition, endpoint.id);
                 if (!Store.findTransition(transition.id)) Store.ui.selection = null;
@@ -797,11 +830,81 @@ const Inspector = (() => {
             }));
             body.appendChild(line);
         });
-        body.appendChild(secondaryButton('+ Ajouter un point sur la carte', () => {
-            Editor.startTransitionEndpoint(transition.id);
-        }));
+        if (transition.type === 'stairs' && transition.endpoints.length >= 2) {
+            const note = document.createElement('div');
+            note.className = 'inspector-hint';
+            note.textContent = 'Un escalier relie exactement deux endpoints.';
+            body.appendChild(note);
+        } else {
+            body.appendChild(secondaryButton('+ Ajouter un point sur la carte', () => {
+                Editor.startTransitionEndpoint(transition.id);
+            }));
+        }
         body.appendChild(sep());
         body.appendChild(dangerButton('Supprimer la transition', deleteSelectedTransition));
+    }
+
+    /* 7.8 : géométrie de la gaine (unique pour toute la liaison) et bornes
+       de desserte de l'ascenseur. */
+    function renderElevatorSections(body, transition) {
+        body.appendChild(sep());
+        body.appendChild(sectionTitle('Cabine (commune à tous les étages)'));
+        body.appendChild(field('Largeur :', numberInput(transition.cabin.width, 0.5, 8, 0.5, value => {
+            transition.cabin.width = value; Store.touch(); App.renderAll();
+        })));
+        body.appendChild(field('Hauteur :', numberInput(transition.cabin.height, 0.5, 8, 0.5, value => {
+            transition.cabin.height = value; Store.touch(); App.renderAll();
+        })));
+        body.appendChild(field('Rotation :', selectInput({ 0: '0°', 90: '90°', 180: '180°', 270: '270°' },
+            String(((transition.cabin.rotation % 360) + 360) % 360), value => {
+                transition.cabin.rotation = Number(value); Store.touch(); App.renderAll();
+            })));
+        body.appendChild(field('Porte côté :', selectInput(cabinDoorSideLabels(),
+            transition.cabin.doorSide, value => {
+                transition.cabin.doorSide = value; Store.touch(); App.renderAll();
+            })));
+
+        body.appendChild(sep());
+        body.appendChild(sectionTitle('Desserte'));
+        const floors = Store.sortedFloors();
+        const boundField = (label, which) => {
+            const autoLabel = which === 'min'
+                ? 'Auto (premier étage du plan)' : 'Auto (dernier étage du plan)';
+            const options = { auto: autoLabel };
+            floors.forEach(floor => options[String(floor.order)] = floor.name);
+            const current = which === 'min' ? transition.minFloorOrder : transition.maxFloorOrder;
+            body.appendChild(field(label, selectInput(options,
+                current === null || current === undefined ? 'auto' : String(current), value => {
+                    const order = value === 'auto' ? null : Number(value);
+                    // Resserrer une borne supprime les arrêts hors plage,
+                    // après confirmation explicite (7.10).
+                    const dropped = Store.elevatorEndpointsOutOfRange(transition, which, order);
+                    if (dropped.length) {
+                        const lines = dropped.map(endpoint => {
+                            const floor = Store.findFloor(endpoint.floorId);
+                            return '— L\'arrêt « ' + (floor ? floor.name : 'Étage inconnu')
+                                + ' » sera supprimé de cet ascenseur.';
+                        }).join('\n');
+                        if (!confirm('Resserrer la desserte ?\n\n' + lines)) {
+                            return render();
+                        }
+                    }
+                    Store.setElevatorBound(transition, which, order);
+                    if (!Store.findTransition(transition.id)) Store.ui.selection = null;
+                    App.renderAll();
+                })));
+        };
+        boundField('Étage min :', 'min');
+        boundField('Étage max :', 'max');
+        if (transition.endpoints.length > 0) {
+            body.appendChild(secondaryButton('+ Créer les arrêts manquants (porte partout)', () => {
+                const added = Store.populateElevatorStops(transition);
+                App.renderAll();
+                Editor.setTicker(added
+                    ? 'DESSERTE COMPLÉTÉE // ' + added + ' ARRÊT(S) AJOUTÉ(S)'
+                    : 'DESSERTE DÉJÀ COMPLÈTE');
+            }));
+        }
     }
 
     /* --- Suppressions (aussi appelées par la touche Suppr) --- */

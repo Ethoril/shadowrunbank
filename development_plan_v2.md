@@ -595,6 +595,175 @@ Contrôles MJ :
 - [x] Un garde découvert ne révèle pas automatiquement sa ronde
 - [x] Aucun déplacement de pion n'écrase une modification du plan
 
+## 7.8 Cabine d'ascenseur : placement hors salle et partage entre étages
+
+> **Statut : implémenté le 2026-07-19** — modèle `cabin`/`hasDoor`/bornes dans
+> `store.js`, rendu généré et occlusion dans `map.js`, inspecteur dédié,
+> extension automatique à la création d'étage. Tests unitaires ajoutés.
+
+Constat : la cabine d'ascenseur (**elevator_decor**) et l'escalier visuel
+(**stairs**) sont aujourd'hui de simples décors placés à la main, étage par étage,
+sans lien avec la transition logique (**transition** de type **elevator**/**stairs**).
+Rien n'empêche techniquement de sortir une cabine des cellules d'une salle, mais
+comme la cabine et la porte sont gérées comme deux décors indépendants sans
+géométrie partagée, le seul flux pratique aujourd'hui est de poser la cabine à
+cheval sur la salle.
+
+Cible : fusionner la représentation visuelle de la cabine avec la transition
+elle-même, pour que la géométrie ne soit définie qu'une fois et se répercute
+automatiquement partout où l'ascenseur dessert un étage.
+
+~~~js
+{
+  id: "tr_xxx",
+  type: "elevator",
+  name: "Ascenseur de service",
+  bidirectional: true,
+  state: "active",
+  revealed: true,
+
+  // Géométrie de la gaine, définie une seule fois pour toute la liaison,
+  // identique (x, y compris) sur tous les étages desservis
+  cabin: { width: 2, height: 2, rotation: 0, doorSide: "south" },
+
+  // Bornes de desserte : null = suit automatiquement l'étage le plus haut / le
+  // plus bas existant ; une valeur explicite fige la borne (choisie dans un
+  // sélecteur d'étages de l'inspecteur de l'ascenseur)
+  minFloorOrder: null,
+  maxFloorOrder: null,
+
+  endpoints: [
+    { id: "ep_a", floorId: "f_ground", x: 12, y: 8, label: "Rez-de-chaussée", hasDoor: true },
+    { id: "ep_b", floorId: "f_servers", x: 12, y: 8, label: "Sous-sol serveurs", hasDoor: true },
+    { id: "ep_c", floorId: "f_vault", x: 12, y: 8, label: "Voûte", hasDoor: false }
+  ]
+}
+~~~
+
+Règles :
+
+- la cabine n'est plus un décor autonome dans **plan.decors** : elle est calculée
+  et dessinée sur chaque étage à partir de **cabin** et des coordonnées de
+  l'endpoint de cet étage ;
+- la cabine peut être placée entièrement en dehors des cellules d'une salle,
+  dans une zone non peinte (gaine) ; seule la porte touche le mur de la salle
+  desservie ;
+- **x/y sont strictement identiques sur tous les endpoints d'un même ascenseur**,
+  sans exception ni correction ponctuelle par étage — une gaine réelle ne se
+  déplace pas latéralement ;
+- **doorSide** (nord/sud/est/ouest, relatif à la rotation de la cabine) détermine
+  le côté où la porte est dessinée pour toute la liaison ;
+- **hasDoor** (par endpoint) contrôle à la fois l'affichage de la porte et la
+  possibilité de s'arrêter à cet étage : sans porte, l'étage n'apparaît jamais
+  comme destination, mais la gaine occulte et bloque quand même le mouvement à
+  cet étage, comme n'importe quel décor opaque ;
+- côté joueur, la cabine et sa porte ne sont rendues que si **hasDoor** est vrai
+  sur l'étage courant (et sous réserve des règles habituelles de révélation) ;
+  côté MJ, la gaine reste visible sur tous les étages compris entre
+  **minFloorOrder** et **maxFloorOrder** (en fantôme si sans porte), pour
+  faciliter l'alignement ;
+- l'inspecteur de l'ascenseur propose un sélecteur d'étage minimum et d'étage
+  maximum, initialisé par défaut sur le plus bas et le plus haut étage du plan ;
+  resserrer une borne supprime les endpoints désormais hors plage, après
+  confirmation (« L'arrêt {étage} sera supprimé de cet ascenseur ») ;
+- à la création d'un étage (**Store.addFloor**), chaque transition **elevator**
+  existante dont la borne correspondante est encore automatique (**null**) reçoit
+  un nouvel endpoint sur ce nouvel étage, aux mêmes coordonnées que ses voisins,
+  avec **hasDoor: true** par défaut *(amendé le 2026-07-19 : porte ouverte
+  partout par défaut, le MJ retire celles qu'il ne veut pas — même logique à la
+  création d'un ascenseur, voir 7.11)* ; un ascenseur dont une borne a été figée
+  explicitement n'est pas étendu au-delà.
+
+## 7.9 Escaliers : sens de circulation
+
+> **Statut : implémenté le 2026-07-19** — `direction` remplace `bidirectional`
+> pour les escaliers (migration de l'ancien `bidirectional: false` incluse),
+> logique de déplacement, badge de sens sur l'icône et menu joueur adaptés.
+> Convention verticale retenue : `floor.order` croissant = étage plus bas
+> (Niv 0 avant Niv -1), conforme au plan de production.
+
+Cible : pouvoir déclarer qu'un escalier ne monte que dans un sens, descend
+uniquement, ou fonctionne dans les deux sens, et que ce sens s'applique de façon
+cohérente aux deux étages reliés.
+
+~~~js
+{
+  id: "tr_xxx",
+  type: "stairs",
+  name: "Escalier de service",
+  direction: "up" | "down" | "both",
+  endpoints: [
+    { id: "ep_a", floorId: "f_ground", x: 4, y: 6 },
+    { id: "ep_b", floorId: "f_1", x: 4, y: 2 }
+  ]
+}
+~~~
+
+Règles :
+
+- **direction** remplace **bidirectional** pour le type **stairs** (« both »
+  équivaut à l'ancien **bidirectional: true**) ; les autres types de transition
+  conservent **bidirectional** tel quel ;
+- le sens se lit par rapport à l'ordre des étages (**floor.order**) : « up »
+  n'autorise le passage que de l'endpoint sur l'étage le plus bas vers celui du
+  plus haut ; « down » uniquement l'inverse ;
+- un escalier reste limité à exactement deux endpoints, pour que « monter » et
+  « descendre » restent sans ambiguïté ;
+- l'affichage de l'icône et le menu de confirmation joueur reflètent le sens
+  autorisé depuis l'endpoint où se trouve le pion (flèche montante, descendante,
+  ou les deux) ; l'étage sans issue via cet escalier ne propose pas cette
+  transition comme destination ;
+- changer **direction** depuis n'importe quel endpoint met à jour la transition
+  entière, donc les deux étages concernés, sans qu'il soit possible que les deux
+  extrémités se contredisent.
+
+## 7.10 Décisions prises (2026-07-19)
+
+> **Statut : implémenté le 2026-07-19** — coordonnées strictement partagées,
+> sélecteur min/max avec confirmation de suppression des arrêts hors plage,
+> outil MJ « Purger les décors escalier / cabine » (avec sauvegarde locale
+> préalable et récapitulatif groupé), `doorSide` explicite, validation qui
+> refuse un troisième endpoint sur un escalier. Les décors `elevator_decor`
+> et `stairs` sont retirés de la palette (marqués `legacy`) mais restent
+> rendus sur les plans existants tant que la purge n'a pas été lancée.
+
+- **Alignement inter-étages.** Pas de décalage possible entre étages : les
+  coordonnées de la cabine sont strictement identiques sur tous les endpoints
+  d'un même ascenseur.
+- **Gaine qui ne dessert pas toute la hauteur du bâtiment.** Résolu par le
+  sélecteur d'étage minimum/maximum de l'inspecteur de l'ascenseur
+  (**minFloorOrder**/**maxFloorOrder**), par défaut sur tout le bâtiment ;
+  resserrer une borne supprime les endpoints désormais hors plage.
+- **Décors existants (elevator_decor, stairs) posés à la main.** Ils doivent
+  disparaître au profit du rendu généré par la transition, mais jamais
+  silencieusement : une boîte de confirmation liste chaque décor concerné
+  avant suppression, du type « Le décor {nom} de l'étage {étage} sera
+  supprimé », étage par étage, avant toute suppression effective. Cette
+  étape est un outil déclenché par le MJ (pas une migration automatique
+  silencieuse au chargement), dans le même esprit prudent que le reste des
+  migrations de ce projet (section 16).
+- **doorSide explicite plutôt que déduit de la rotation.** Confirmé tel que
+  proposé en 7.8.
+- **Escaliers limités à deux endpoints.** Confirmé : ajouter une validation qui
+  refuse un troisième endpoint sur une transition de type **stairs**.
+
+## 7.11 Reste à cadrer avant développement
+
+- ~~Adapter ou compléter le parcours « Créer une liaison » (7.4).~~ **Traité le
+  2026-07-19 :** la palette Structure propose la nature dès la création
+  (Escalier, Ascenseur, Échelle, Trappe, Passage). Créer un ascenseur pose la
+  gaine en un clic avec un arrêt **et une porte sur chaque étage desservi**
+  (cabine et bornes par défaut) ; le MJ retire ensuite les portes non désirées
+  dans l'inspecteur — par exemple un ascenseur qui ne s'arrête qu'aux étages
+  pairs. Un bouton « Créer les arrêts manquants (porte partout) » complète la
+  desserte d'un ascenseur existant ou converti. Les types sans cabine
+  conservent le flux point par point.
+- ~~Définir l'ordre exact des opérations de la boîte de confirmation de
+  suppression des anciens décors.~~ **Tranché le 2026-07-19 :** un seul
+  récapitulatif groupé pour tout le plan, trié étage par étage, affiché par
+  l'outil MJ « Purger les décors escalier / cabine » ; une sauvegarde locale
+  est créée avant la suppression effective.
+
 ---
 
 ## 8. Catalogue de sécurité cible
@@ -1243,3 +1412,9 @@ cas particuliers et gardera le projet simple à maintenir.
 | 2026-07-16 | Phases 7 / 8 | Poignées de couverture sur la carte et synchronisation pions/découvertes testée entre deux écrans | À renseigner |
 | 2026-07-16 | Phase 8 | Site v14 publié, règles Firestore déployées et document de production confirmé en schéma v2 révision 9 | `3dce9bf` |
 | 2026-07-16 | Phase 8 | Snapshot cloud et déplacement multi-écrans validés en production ; correction de la recréation des dernières données après suppression ou rechargement local périmé | À renseigner |
+| 2026-07-19 | Phase 6 (évolution) | Besoin identifié : cabine d'ascenseur plaçable hors salle et partagée entre étages (7.8), sens de circulation des escaliers (7.9). Logique et points ouverts documentés, développement non commencé | À renseigner |
+| 2026-07-19 | Phase 6 (évolution) | Décisions tranchées : pas de décalage inter-étages, sélecteur d'étage min/max sur l'ascenseur, suppression confirmée des anciens décors avec boîte d'avertissement, doorSide explicite et escaliers limités à deux endpoints (7.10). Développement non commencé | À renseigner |
+| 2026-07-19 | Phase 6 (évolution) | 7.8–7.10 implémentés : cabine générée depuis la transition (géométrie unique, coordonnées partagées, occlusion opaque, fantôme MJ hors porte), bornes min/max avec confirmation, extension auto sur nouvel étage, sens up/down/both des escaliers avec migration de l'ancien bidirectional, limite de deux endpoints, outil MJ de purge des décors obsolètes. 9 tests unitaires ajoutés (24/24 verts) | À renseigner |
+| 2026-07-19 | Outillage MJ | Bouton « Tout supprimer (plan vierge) » : récapitulatif de ce qui sera perdu, sauvegarde locale préalable, remise à zéro du plan (nom, grille et révision cloud conservés), pions et découvertes supprimés, plan restaurable via l'historique. Test unitaire ajouté (25/25 verts) | À renseigner |
+| 2026-07-19 | Phase 6 (évolution) | Correctif 7.8 : les bornes min/max figées d'un ascenseur suivent désormais leurs étages lors d'une suppression ou d'un réordonnancement (rabat sur la plage restante si l'étage désigné disparaît), et un arrêt ne peut plus être ajouté hors desserte figée. 2 tests unitaires ajoutés (27/27 verts) | À renseigner |
+| 2026-07-19 | Phase 6 (évolution) | 7.11 traité : choix de la nature dès la création dans la palette ; un nouvel ascenseur pose gaine + arrêt + porte sur chaque étage desservi en un clic (amendement 7.8 : porte ouverte par défaut aussi sur les nouveaux étages), portes retirables individuellement dans l'inspecteur, bouton « Créer les arrêts manquants ». 1 test unitaire ajouté (28/28 verts) | À renseigner |

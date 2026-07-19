@@ -53,17 +53,28 @@ const Exploration = (() => {
             transition,
             endpoint: transition.endpoints.find(endpoint => endpoint.floorId === token.floorId
                 && Math.hypot(endpoint.x - token.x, endpoint.y - token.y) <= 0.8)
-        })).find(item => item.endpoint && item.transition.state === 'active') || null;
+        })).find(item => item.endpoint && item.transition.state === 'active'
+            // Un arrêt d'ascenseur sans porte n'est pas praticable (7.8).
+            && !(item.transition.type === 'elevator' && item.endpoint.hasDoor === false)) || null;
     }
 
     function destinationsFor(transition, sourceEndpoint) {
+        if (transition.type === 'stairs') {
+            // 7.9 : le sens de circulation détermine si on peut partir d'ici.
+            if (!Store.stairsExitDirection(transition, sourceEndpoint)) return [];
+            return transition.endpoints.filter(endpoint => endpoint.id !== sourceEndpoint.id);
+        }
         const sourceIndex = transition.endpoints.findIndex(endpoint => endpoint.id === sourceEndpoint.id);
         if (!transition.bidirectional && sourceIndex !== 0) return [];
-        return transition.endpoints.filter(endpoint => endpoint.id !== sourceEndpoint.id);
+        return transition.endpoints.filter(endpoint => endpoint.id !== sourceEndpoint.id
+            // Sans porte, l'étage n'apparaît jamais comme destination (7.8).
+            && !(transition.type === 'elevator' && endpoint.hasDoor === false));
     }
 
     function moveThroughTransition(token, transition, sourceEndpoint, destination) {
         if (!token || !transition || transition.state !== 'active' || !destination) return false;
+        if (transition.type === 'elevator' && sourceEndpoint
+            && sourceEndpoint.hasDoor === false) return false;
         const allowed = destinationsFor(transition, sourceEndpoint);
         if (!allowed.some(endpoint => endpoint.id === destination.id)) return false;
         const access = transition.accessEntityId ? Store.findEntity(transition.accessEntityId) : null;
@@ -86,10 +97,15 @@ const Exploration = (() => {
         const { transition, endpoint } = found;
         const destinations = destinationsFor(transition, endpoint);
         if (!destinations.length) return false;
+        // 7.9 : le menu joueur reflète le sens autorisé depuis cet endpoint.
+        const exit = transition.type === 'stairs'
+            ? Store.stairsExitDirection(transition, endpoint) : null;
+        const arrow = exit === 'up' ? ' (↑ monter)'
+            : exit === 'down' ? ' (↓ descendre)' : exit === 'both' ? ' (⇅)' : '';
         let destination = destinations[0];
         if (destinations.length === 1) {
             const floor = Store.findFloor(destination.floorId);
-            if (!confirm('Utiliser « ' + transition.name + ' » vers '
+            if (!confirm('Utiliser « ' + transition.name + ' »' + arrow + ' vers '
                 + (Store.isEffectivelyRevealed(floor, 'floor') ? floor.name : 'Destination inconnue') + ' ?')) {
                 return false;
             }

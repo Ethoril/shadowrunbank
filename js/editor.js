@@ -47,7 +47,29 @@ const Editor = (() => {
         structure.appendChild(toolButton('paint', '✏ Dessiner Pièce', '#4af626'));
         structure.appendChild(toolButton('erase', '⌫ Gomme', '#ff2a2a'));
         structure.appendChild(toolButton('token', '◉ Nouveau pion PJ', '#00d2ff', 'runner'));
-        structure.appendChild(toolButton('transition:new', '◆ Nouvelle transition', '#ffe66d', 'stairs'));
+
+        // 7.11 : la nature de la liaison se choisit dès la création. Un
+        // ascenseur pose sa gaine avec un arrêt (et une porte) sur chaque
+        // étage ; les autres types gardent le flux point par point.
+        const transitionsGroup = document.createElement('details');
+        transitionsGroup.className = 'tool-category';
+        transitionsGroup.open = true;
+        const transitionsTitle = document.createElement('summary');
+        transitionsTitle.textContent = 'Transitions';
+        transitionsGroup.appendChild(transitionsTitle);
+        const transitionsList = document.createElement('div');
+        transitionsList.className = 'tool-category-list';
+        [
+            ['stairs', '◆ Escalier', 'stairs'],
+            ['elevator', '◆ Ascenseur', 'elevator'],
+            ['ladder', '◆ Échelle', 'ladder'],
+            ['hatch', '◆ Trappe', 'hatch'],
+            ['passage', '◆ Passage', 'opening']
+        ].forEach(([type, label, icon]) => {
+            transitionsList.appendChild(toolButton('transition:new:' + type, label, '#ffe66d', icon));
+        });
+        transitionsGroup.appendChild(transitionsList);
+        structure.appendChild(transitionsGroup);
 
         const clipboardActions = document.createElement('div');
         clipboardActions.className = 'clipboard-actions';
@@ -85,6 +107,14 @@ const Editor = (() => {
         });
         structure.appendChild(snap);
 
+        const resetButton = document.createElement('button');
+        resetButton.className = 'btn-action';
+        resetButton.textContent = '🗑 Tout supprimer (plan vierge)';
+        resetButton.title = 'Repart d’une feuille blanche : étages, pièces, dispositifs, décors, '
+            + 'transitions, pions et découvertes sont supprimés après confirmation';
+        resetButton.addEventListener('click', resetPlanFromScratch);
+        structure.appendChild(resetButton);
+
         const devices = document.getElementById('tools-entities');
         devices.innerHTML = '';
         EntityCatalog.categories.forEach(category => {
@@ -117,13 +147,72 @@ const Editor = (() => {
                 group.appendChild(title);
                 const list = document.createElement('div');
                 list.className = 'tool-category-list';
-                DecorCatalog.entries(category.id).forEach(([type, definition]) => {
-                    list.appendChild(toolButton('decor:' + type, '[+] ' + definition.name, definition.color, definition.icon));
-                });
+                DecorCatalog.entries(category.id)
+                    .filter(([, definition]) => !definition.legacy)
+                    .forEach(([type, definition]) => {
+                        list.appendChild(toolButton('decor:' + type, '[+] ' + definition.name, definition.color, definition.icon));
+                    });
                 group.appendChild(list);
                 decors.appendChild(group);
             });
+
+            const purgeButton = document.createElement('button');
+            purgeButton.className = 'btn-secondary';
+            purgeButton.textContent = '🧹 Purger les décors escalier / cabine';
+            purgeButton.title = 'Supprime les anciens décors « Escalier » et « Cabine d’ascenseur », '
+                + 'remplacés par le rendu généré depuis les transitions (7.10)';
+            purgeButton.addEventListener('click', purgeLegacyTransitionDecors);
+            decors.appendChild(purgeButton);
         }
+    }
+
+    /* Remise à zéro MJ : récapitule ce qui sera perdu, crée une version de
+       restauration locale, puis repart d'un plan vierge (pions et
+       découvertes compris). L'action reste annulable via l'historique
+       pour le plan lui-même. */
+    function resetPlanFromScratch() {
+        if (Store.isPlayerView()) return;
+        const plan = Store.getPlan();
+        const counts = [
+            [plan.floors.length, 'étage(s)'],
+            [plan.rooms.length, 'pièce(s)'],
+            [plan.entities.length, 'dispositif(s)'],
+            [plan.decors.length, 'décor(s)'],
+            [plan.transitions.length, 'transition(s)'],
+            [Store.getTokens().length, 'pion(s) PJ'],
+            [Store.getDiscoveries().length, 'découverte(s)']
+        ].filter(([count]) => count > 0)
+            .map(([count, label]) => '— ' + count + ' ' + label).join('\n');
+        if (!confirm('Repartir d\'une feuille blanche ?\n\nSeront supprimés :\n'
+            + (counts || '— (plan déjà vide)')
+            + '\n\nUne version de restauration locale sera créée avant la suppression.')) return;
+        Store.backupCurrentPlan('avant-remise-a-zero');
+        Store.resetPlan();
+        setTool('select');
+        App.renderAll();
+        setTicker('PLAN RÉINITIALISÉ // FEUILLE BLANCHE');
+    }
+
+    /* 7.10 : suppression des décors historiques rendus obsolètes par la
+       cabine générée. Jamais silencieuse : un récapitulatif groupé liste
+       chaque décor, étage par étage, avant toute suppression effective. */
+    function purgeLegacyTransitionDecors() {
+        if (Store.isPlayerView()) return;
+        const items = Store.listLegacyTransitionDecors();
+        if (!items.length) {
+            setTicker('AUCUN DÉCOR ESCALIER / CABINE À SUPPRIMER');
+            return;
+        }
+        const lines = items.map(item => '— Le décor « ' + item.decor.name + ' » de l\'étage « '
+            + (item.floor ? item.floor.name : 'Étage inconnu') + ' » sera supprimé.').join('\n');
+        if (!confirm('Ces décors sont remplacés par le rendu généré depuis les transitions :\n\n'
+            + lines + '\n\nConfirmer la suppression ?')) return;
+        Store.backupCurrentPlan('purge-decors-liaisons');
+        const removed = Store.purgeLegacyTransitionDecors();
+        const sel = Store.ui.selection;
+        if (sel && sel.kind === 'decor' && !Store.findDecor(sel.id)) Store.ui.selection = null;
+        App.renderAll();
+        setTicker('PURGE // ' + removed + ' DÉCOR(S) SUPPRIMÉ(S)');
     }
 
     function toolButton(tool, text, color, icon) {
@@ -358,13 +447,33 @@ const Editor = (() => {
 
         if (tool.startsWith('transition:')) {
             const requestedId = tool.slice('transition:'.length);
-            let transition = requestedId === 'new' ? null : Store.findTransition(requestedId);
-            if (!transition) transition = Store.addTransition('stairs');
+            const isNew = requestedId.startsWith('new');
+            let transition = isNew ? null : Store.findTransition(requestedId);
+            const createdType = isNew ? (requestedId.split(':')[1] || 'stairs') : null;
+            if (!transition) transition = Store.addTransition(createdType || 'stairs');
             const pos = clampEntityPos(MapView.gridPosFromEvent(e), Store.getPlan().grid);
-            Store.addTransitionEndpoint(transition, floor.id, pos.x, pos.y);
             Store.ui.selection = { kind: 'transition', id: transition.id };
             setTool('select');
-            setTicker('POINT DE TRANSITION AJOUTÉ // ' + transition.name.toUpperCase());
+            // Un nouvel ascenseur dessert d'emblée tous les étages, porte
+            // ouverte partout : le MJ retire ensuite les portes non voulues.
+            if (createdType === 'elevator') {
+                Store.populateElevatorStops(transition, pos.x, pos.y);
+                setTicker('ASCENSEUR CRÉÉ // PORTE SUR CHAQUE ÉTAGE — À AJUSTER DANS L\'INSPECTEUR');
+                return;
+            }
+            const endpoint = Store.addTransitionEndpoint(transition, floor.id, pos.x, pos.y);
+            if (!endpoint) {
+                const range = Store.elevatorFloorRange(transition);
+                const outOfRange = transition.type === 'elevator' && range
+                    && (floor.order < range.min || floor.order > range.max);
+                setTicker(transition.type === 'stairs'
+                    ? 'REFUSÉ // UN ESCALIER RELIE EXACTEMENT DEUX ENDPOINTS'
+                    : outOfRange
+                        ? 'REFUSÉ // ÉTAGE HORS DESSERTE DE L\'ASCENSEUR'
+                        : 'REFUSÉ // UN SEUL ARRÊT PAR ÉTAGE POUR UN ASCENSEUR');
+            } else {
+                setTicker('POINT DE TRANSITION AJOUTÉ // ' + transition.name.toUpperCase());
+            }
             return;
         }
 
@@ -460,6 +569,14 @@ const Editor = (() => {
                 const bounded = clampEntityPos(pos, grid);
                 endpoint.x = bounded.x;
                 endpoint.y = bounded.y;
+                // 7.8 : la gaine d'un ascenseur est solidaire — déplacer un
+                // endpoint déplace toute la liaison, sur tous les étages.
+                if (transition.type === 'elevator') {
+                    transition.endpoints.forEach(item => {
+                        item.x = bounded.x;
+                        item.y = bounded.y;
+                    });
+                }
                 dragSession.moved = true;
                 MapView.moveTransitionEndpointDiv(transition.id, endpoint.id, endpoint.x, endpoint.y);
             } else if (dragSession.kind === 'waypoint') {
@@ -552,7 +669,8 @@ const Editor = (() => {
     function onTransitionPointerDown(e, transitionId, endpointId) {
         if (Store.ui.activeTool !== 'select') return;
         Store.ui.selection = { kind: 'transition', id: transitionId };
-        if (!Store.isPlayerView()) {
+        // Cabine fantôme sans endpoint sur cet étage : sélection seule.
+        if (endpointId && !Store.isPlayerView()) {
             Store.beginTransaction('Déplacer une transition');
             dragSession = { kind: 'transition', id: transitionId, endpointId, moved: false };
             capturePointer(e);

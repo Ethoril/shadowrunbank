@@ -150,8 +150,11 @@ const DecorCatalog = (() => {
         opening: define({ category: 'structural', name: 'Ouverture / passage', label: 'PAS', icon: 'opening', color: '#26a69a', width: 1.5, height: 0.25, layer: 'floor' }),
         glass: define({ category: 'structural', name: 'Vitre', label: 'VIT', icon: 'glass', color: '#80deea', width: 2, height: 0.2, blocksMovement: true }),
         grid: define({ category: 'structural', name: 'Grille', label: 'GRL', icon: 'grid', color: '#607d8b', width: 2, height: 0.2, blocksMovement: true }),
-        stairs: define({ category: 'structural', name: 'Escalier', label: 'ESC', icon: 'stairs', color: '#7986cb', width: 2, height: 3, layer: 'floor' }),
-        elevator_decor: define({ category: 'structural', name: 'Cabine d’ascenseur', label: 'ELV', icon: 'elevator-decor', color: '#5c6bc0', width: 2, height: 2, blocksMovement: true, blocksVision: opaque }),
+        // 7.10 : rendus obsolètes par la cabine générée depuis les transitions.
+        // Conservés pour afficher les plans existants, mais retirés de la
+        // palette ; l'outil MJ « purge » propose leur suppression.
+        stairs: define({ category: 'structural', name: 'Escalier', label: 'ESC', icon: 'stairs', color: '#7986cb', width: 2, height: 3, layer: 'floor', legacy: true }),
+        elevator_decor: define({ category: 'structural', name: 'Cabine d’ascenseur', label: 'ELV', icon: 'elevator-decor', color: '#5c6bc0', width: 2, height: 2, blocksMovement: true, blocksVision: opaque, legacy: true }),
 
         counter: define({ category: 'furniture', name: 'Comptoir', label: 'CPT', icon: 'counter', color: '#ffb74d', width: 3, blocksMovement: true, blocksVision: opaque }),
         desk: define({ category: 'furniture', name: 'Bureau', label: 'BUR', icon: 'desk', color: '#a1887f', width: 2, blocksMovement: true }),
