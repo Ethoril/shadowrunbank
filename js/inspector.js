@@ -823,7 +823,9 @@ const Inspector = (() => {
         transition.endpoints.forEach(endpoint => {
             const floor = Store.findFloor(endpoint.floorId);
             const floorName = floor ? floor.name : 'Étage inconnu';
-            body.appendChild(revealToggle('Point « ' + floorName + ' »', endpoint, () => {
+            const letter = Store.endpointLetter(transition, endpoint);
+            const pointName = 'Point « ' + floorName + ' »' + (letter ? ' ' + letter : '');
+            body.appendChild(revealToggle(pointName, endpoint, () => {
                 MapView.renderTransitions(); Visibility.render();
             }));
         });
@@ -847,9 +849,10 @@ const Inspector = (() => {
                 const floor = Store.findFloor(endpoint.floorId);
                 const line = document.createElement('div');
                 line.className = 'btn-row transition-endpoint-row';
+                const letter = Store.endpointLetter(transition, endpoint);
                 const name = document.createElement('span');
                 name.textContent = (index + 1) + '. ' + (floor ? floor.name : 'Étage inconnu')
-                    + ' · ' + endpoint.x + ',' + endpoint.y;
+                    + (letter ? ' ' + letter : '') + ' · ' + endpoint.x + ',' + endpoint.y;
                 line.appendChild(name);
                 line.appendChild(secondaryButton('Retirer', () => {
                     Store.removeTransitionEndpoint(transition, endpoint.id);

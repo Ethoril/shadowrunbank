@@ -404,6 +404,26 @@ test('escaliers et échelles partagent leur position sur les étages cochés', (
     assert.equal(ladder.endpoints.length, 1);
 });
 
+test('plusieurs points d’une trappe sur un même étage reçoivent une lettre a, b, c', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const hatch = Store.addTransition('hatch', 'Trappe double');
+    const a = Store.addTransitionEndpoint(hatch, floors[0].id, 3, 3);
+    const b = Store.addTransitionEndpoint(hatch, floors[0].id, 8, 8);
+    const other = Store.addTransitionEndpoint(hatch, floors[1].id, 5, 5);
+
+    // Deux points sur floors[0] → a puis b dans l'ordre des endpoints.
+    assert.equal(Store.endpointLetter(hatch, a), 'a');
+    assert.equal(Store.endpointLetter(hatch, b), 'b');
+    // Seul point de son étage → pas de lettre, le nom d'étage suffit.
+    assert.equal(Store.endpointLetter(hatch, other), '');
+
+    // Retirer le premier point : le survivant redevient l'unique point (sans lettre).
+    Store.removeTransitionEndpoint(hatch, a.id);
+    assert.equal(Store.endpointLetter(hatch, b), '');
+});
+
 test('le sens d’un escalier s’applique aux deux étages reliés (7.9)', () => {
     const { Store, Exploration } = loadApplicationCore();
     Store.load();

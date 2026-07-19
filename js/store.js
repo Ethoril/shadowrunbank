@@ -1243,6 +1243,19 @@ const Store = (() => {
             || (transition && isDiscovered('transition', transition.id))));
     }
 
+    /* Lettre distinctive d'un point quand une même transition possède
+       plusieurs points sur le même étage (trappe/passage) : a, b, c… dans
+       l'ordre des endpoints. Renvoie '' s'il n'y en a qu'un sur l'étage,
+       auquel cas le nom de l'étage suffit à l'identifier. Partagé par
+       l'inspecteur et l'info-bulle carte pour que les lettres concordent. */
+    function endpointLetter(transition, endpoint) {
+        if (!transition || !endpoint) return '';
+        const sameFloor = transition.endpoints.filter(item => item.floorId === endpoint.floorId);
+        if (sameFloor.length < 2) return '';
+        const index = sameFloor.indexOf(endpoint);
+        return index < 0 ? '' : String.fromCharCode(97 + index);
+    }
+
     /* Au niveau transition : « effectivement révélée » = au moins un point
        visible. Sert aux vérifications globales (sélection, interaction). */
     function isEffectivelyRevealed(item, kind) {
@@ -2004,7 +2017,7 @@ const Store = (() => {
         getEffectiveState, setEntityState,
         isDecorAccessController, getAccessController, isAccessOpen,
         getOverlayPreferences, setOverlayVisibility,
-        isPlayerView, isDiscovered, isEffectivelyRevealed, isEndpointRevealed,
+        isPlayerView, isDiscovered, isEffectivelyRevealed, isEndpointRevealed, endpointLetter,
         cameraFeedCameras, isCameraFeedRevealed,
         visibleFloors, visibleRooms, visibleEntities, visibleDecors, visibleTokens, visibleTransitions,
         ensureVisibleView,
