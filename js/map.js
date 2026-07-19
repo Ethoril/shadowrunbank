@@ -293,7 +293,7 @@ const MapView = (() => {
         const rooms = ROOM_OCCLUSION_CHANNELS.has(channel)
             ? Store.floorRooms(floorId).map(room => [room.id, room.cells]) : [];
         const decors = Store.floorDecors(floorId)
-            .filter(decor => decor.blocksVision.includes(channel))
+            .filter(decor => !Store.isAccessOpen(decor) && decor.blocksVision.includes(channel))
             .map(decor => [decor.id, decor.x, decor.y, decor.width, decor.height, decor.rotation]);
         const entities = Store.floorEntities(floorId)
             .filter(ent => Store.getEffectiveState(ent) !== 'offline'
@@ -314,7 +314,7 @@ const MapView = (() => {
 
         const segments = ROOM_OCCLUSION_CHANNELS.has(channel) ? computeWalls(floorId) : [];
         Store.floorDecors(floorId).forEach(decor => {
-            if (!decor.blocksVision.includes(channel)) return;
+            if (Store.isAccessOpen(decor) || !decor.blocksVision.includes(channel)) return;
             const points = orientedRectangle(decor.x, decor.y, decor.rotation,
                 decor.width, decor.height, true);
             segments.push(...polygonSegments(points));
@@ -493,10 +493,12 @@ const MapView = (() => {
             : Store.visibleDecors(floor.id);
         decors.forEach(decor => {
             const definition = DecorCatalog.get(decor.type);
+            const accessOpen = Store.isAccessOpen(decor);
             const div = document.createElement('div');
             div.className = 'decor'
                 + (definition.layer === 'floor' ? ' floor-decor' : '')
                 + (decor.blocksVision.length ? ' blocks-vision' : '')
+                + (accessOpen ? ' access-open' : '')
                 + (Store.isPlayerView() || Store.isEffectivelyRevealed(decor, 'decor') ? '' : ' unrevealed');
             if (selection && selection.kind === 'decor' && selection.id === decor.id) {
                 div.classList.add('selected');
@@ -508,8 +510,15 @@ const MapView = (() => {
             div.style.height = (decor.height * cellPx) + 'px';
             div.style.color = definition.color;
             div.style.setProperty('--decor-rotation', decor.rotation + 'deg');
-            div.title = decor.name;
+            div.title = decor.name + (decor.accessEntityId
+                ? (accessOpen ? ' — OUVERT' : ' — VERROUILLÉ') : '');
             appendCatalogIcon(div, definition.icon, 'decor-icon', definition.label, 'decor-label');
+            if (accessOpen) {
+                const badge = document.createElement('span');
+                badge.className = 'decor-access-state';
+                badge.textContent = 'OUVERT';
+                div.appendChild(badge);
+            }
             div.addEventListener('pointerdown', event => {
                 event.stopPropagation();
                 Editor.onDecorPointerDown(event, decor.id);
@@ -717,6 +726,7 @@ const MapView = (() => {
         const g = svgGroup('g-coverages');
         if (!g) return;
         g.innerHTML = '';
+        if (!Store.getOverlayPreferences().coverages) return;
         const floor = Store.currentFloor();
         if (!floor) return;
 
@@ -833,6 +843,7 @@ const MapView = (() => {
         const group = svgGroup('g-coverage-handles');
         if (!group) return;
         group.innerHTML = '';
+        if (!Store.getOverlayPreferences().coverages) return;
         if (Store.isPlayerView() || Store.ui.activeTool !== 'select') return;
         const selection = Store.ui.selection;
         if (!selection || selection.kind !== 'entity') return;
@@ -930,6 +941,7 @@ const MapView = (() => {
         const g = svgGroup('g-cables');
         if (!g) return;
         g.innerHTML = '';
+        if (!Store.getOverlayPreferences().networkLinks) return;
         const floor = Store.currentFloor();
         if (!floor) return;
         if (now === undefined) now = Date.now();

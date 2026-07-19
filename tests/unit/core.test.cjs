@@ -587,3 +587,48 @@ test('le catalogue expose tous les dispositifs attendus', () => {
         assert.equal(definition.stateProfile, 'personnel');
     });
 });
+
+test('un décor lié à un contrôle d’accès reflète son état effectif', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floor = Store.currentFloor();
+    const node = Store.addEntity('network_node', floor.id, 2.5, 2.5, 'Nœud');
+    const maglock = Store.addEntity('maglock', floor.id, 3.5, 2.5, 'Verrou');
+    const door = Store.addDecor('opaque_door', floor.id, 4.5, 2.5);
+    door.accessEntityId = maglock.id;
+    maglock.networkId = node.id;
+
+    assert.equal(Store.isDecorAccessController(maglock), true);
+    assert.equal(Store.getAccessController(door), maglock);
+    assert.equal(Store.isAccessOpen(door), false);
+
+    Store.setEntityState(maglock, 'hacked');
+    assert.equal(Store.isAccessOpen(door), true, 'un verrou ouvert ouvre le décor');
+    Store.setEntityState(maglock, 'active');
+    Store.setEntityState(node, 'offline');
+    assert.equal(Store.isAccessOpen(door), true, 'la cascade réseau désactive aussi le verrou');
+
+    Store.deleteEntity(maglock.id);
+    assert.equal(door.accessEntityId, '', 'la suppression nettoie la liaison');
+});
+
+test('les filtres de carte MJ et joueurs sont indépendants', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    assert.deepEqual({ ...Store.getOverlayPreferences() }, {
+        coverages: true, networkLinks: true
+    });
+    Store.setOverlayVisibility('coverages', false);
+    assert.equal(Store.getOverlayPreferences().coverages, false);
+
+    Store.ui.preview = true;
+    assert.deepEqual({ ...Store.getOverlayPreferences() }, {
+        coverages: true, networkLinks: true
+    });
+    Store.setOverlayVisibility('networkLinks', false);
+
+    Store.ui.preview = false;
+    assert.deepEqual({ ...Store.getOverlayPreferences() }, {
+        coverages: false, networkLinks: true
+    });
+});

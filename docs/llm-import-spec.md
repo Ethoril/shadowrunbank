@@ -138,11 +138,15 @@ Premier point = position de départ (mettre = x,y de l'entité). ≥2 points pou
 { "id": "d_mur1", "floorId": "f_rdc", "type": "wall", "name": "Mur nord",
   "x": 3.5, "y": 1.0, "width": 5, "height": 0.35, "rotation": 0,
   "revealed": false, "autoDiscover": true,
+  "accessEntityId": "",
   "blocksMovement": true, "blocksVision": ["optical","infrared","laser"],
   "privateNote": "", "playerInfo": "" }
 ```
 REQUIRED : `id`, `floorId`, `type`, x, y, width, height, rotation numériques ; `blocksVision` ⊂ canaux §5.3.
 `blocksMovement`/`blocksVision`/`autoDiscover` surchargent le défaut catalogue (auto-remplis sinon).
+`accessEntityId` peut référencer un `maglock`, `retina_scanner` ou `dna_analyzer` du plan. Le décor
+est affiché **VERROUILLÉ** lorsque l’état effectif du contrôle est `active`, et **OUVERT** lorsque
+le contrôle est `hacked` ou `offline` (y compris par héritage de l’état d’un nœud réseau).
 
 Catalogue (type : w×h défaut | M=blocksMovement | V=blocksVision opaque(optical,infrared,laser) | layer floor = sous les entités) :
 
@@ -195,7 +199,7 @@ Comme stairs mais : champ `bidirectional` (bool, défaut true) au lieu de `direc
 4. Decors : murs périmétriques + cloisons + portes/ouvertures, puis mobilier.
 5. Entities : réseaux (`network_node` d'abord), puis dispositifs avec `networkId`, coverage explicite (défauts §5.1), directions orientées vers les zones à couvrir, patrouilles pour les mobiles.
 6. Transitions entre étages ; lier les contrôles d'accès via `accessEntityId`.
-7. Cohérence finale : tous les floorId/networkId/accessEntityId référencent des ids existants ; ids uniques ; `revealed:false` par défaut sauf zone d'entrée.
+7. Cohérence finale : tous les floorId/networkId/accessEntityId référencent des ids existants ; pour un décor, `accessEntityId` cible uniquement un `maglock`, `retina_scanner` ou `dna_analyzer` ; ids uniques ; `revealed:false` par défaut sauf zone d'entrée.
 
 ## 10. Squelette minimal valide
 

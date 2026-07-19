@@ -11,6 +11,7 @@ const Store = (() => {
     const DIRTY_KEY = 'shadowrunbank_plan_dirty_v2';
     const TOKENS_KEY = 'shadowrunbank_tokens_v1';
     const DISCOVERIES_KEY = 'shadowrunbank_discoveries_v1';
+    const OVERLAY_PREFS_KEY = 'shadowrunbank_overlay_preferences_v1';
     const CURRENT_SCHEMA_VERSION = 2;
     const SAVE_DEBOUNCE_MS = 800;
     const HISTORY_LIMIT = 50;
@@ -42,7 +43,11 @@ const Store = (() => {
         snapToGrid: false,
         patrolEditId: null,            // entité dont on trace la ronde (outil 'patrol')
         readOnly: false,               // true = mode joueur (cloud actif sans login admin)
-        preview: false                 // true = MJ en prévisualisation « vue joueur »
+        preview: false,                // true = MJ en prévisualisation « vue joueur »
+        overlayPreferences: {
+            gm: { coverages: true, networkLinks: true },
+            player: { coverages: true, networkLinks: true }
+        }
     };
 
     function uid(prefix) {
@@ -77,6 +82,7 @@ const Store = (() => {
 
     const COVERAGE_SHAPES = ['cone', 'beam', 'rectangle', 'circle', 'threshold'];
     const COVERAGE_CHANNELS = ['optical', 'infrared', 'laser', 'magnetic', 'pressure', 'astral'];
+    const DECOR_ACCESS_CONTROL_TYPES = ['maglock', 'retina_scanner', 'dna_analyzer'];
 
     function coverageDefaults(ent, source) {
         const definition = typeof EntityCatalog !== 'undefined'
@@ -129,6 +135,8 @@ const Store = (() => {
             decor.privateNote = typeof decor.note === 'string' ? decor.note : '';
         }
         if (typeof decor.playerInfo !== 'string') decor.playerInfo = '';
+        decor.accessEntityId = typeof decor.accessEntityId === 'string'
+            ? decor.accessEntityId : '';
         delete decor.note;
         return decor;
     }
@@ -387,6 +395,8 @@ const Store = (() => {
         validateFloorReference(candidate.rooms, 'rooms');
         validateFloorReference(candidate.entities, 'entities');
         validateFloorReference(candidate.decors, 'decors');
+        const entityById = new Map(candidate.entities
+            .filter(isPlainObject).map(entity => [entity.id, entity]));
 
         candidate.rooms.forEach((room, index) => {
             if (!isPlainObject(room) || !Array.isArray(room.cells)) {
@@ -429,6 +439,14 @@ const Store = (() => {
             }
             if (typeof decor.privateNote !== 'string' || typeof decor.playerInfo !== 'string') {
                 errors.push('decors[' + index + '] doit séparer privateNote et playerInfo.');
+            }
+            if (typeof decor.accessEntityId !== 'string') {
+                errors.push('decors[' + index + '].accessEntityId doit être une chaîne.');
+            } else if (decor.accessEntityId) {
+                const access = entityById.get(decor.accessEntityId);
+                if (!access || !DECOR_ACCESS_CONTROL_TYPES.includes(access.type)) {
+                    errors.push('decors[' + index + '] référence un contrôle d’accès incompatible.');
+                }
             }
         });
         candidate.transitions.forEach((transition, index) => {
@@ -549,10 +567,42 @@ const Store = (() => {
         } catch (error) {
             discoveries = [];
         }
+        loadOverlayPreferences();
         const first = sortedFloors()[0];
         ui.currentFloorId = first ? first.id : null;
         resetHistory();
         return plan;
+    }
+
+    function loadOverlayPreferences() {
+        const defaults = {
+            gm: { coverages: true, networkLinks: true },
+            player: { coverages: true, networkLinks: true }
+        };
+        try {
+            const stored = JSON.parse(localStorage.getItem(OVERLAY_PREFS_KEY) || '{}');
+            Object.keys(defaults).forEach(profile => {
+                Object.keys(defaults[profile]).forEach(key => {
+                    if (stored && stored[profile] && typeof stored[profile][key] === 'boolean') {
+                        defaults[profile][key] = stored[profile][key];
+                    }
+                });
+            });
+        } catch (error) { /* préférences locales facultatives */ }
+        ui.overlayPreferences = defaults;
+    }
+
+    function getOverlayPreferences() {
+        return ui.overlayPreferences[isPlayerView() ? 'player' : 'gm'];
+    }
+
+    function setOverlayVisibility(key, visible) {
+        if (!['coverages', 'networkLinks'].includes(key)) return false;
+        getOverlayPreferences()[key] = !!visible;
+        try {
+            localStorage.setItem(OVERLAY_PREFS_KEY, JSON.stringify(ui.overlayPreferences));
+        } catch (error) { /* le filtre reste actif pour la session */ }
+        return true;
     }
 
     /* --- Sauvegarde locale et file cloud séquentielle --- */
@@ -1209,6 +1259,20 @@ const Store = (() => {
         return ent.state;
     }
 
+    function isDecorAccessController(ent) {
+        return !!ent && DECOR_ACCESS_CONTROL_TYPES.includes(ent.type);
+    }
+
+    function getAccessController(item) {
+        if (!item || !item.accessEntityId) return null;
+        return findEntity(item.accessEntityId) || null;
+    }
+
+    function isAccessOpen(item) {
+        const controller = getAccessController(item);
+        return !!controller && getEffectiveState(controller) !== 'active';
+    }
+
     function isPatrolBlockedState(state) {
         return state === 'offline' || state === 'neutralized';
     }
@@ -1330,6 +1394,12 @@ const Store = (() => {
         const removedIds = new Set(plan.entities.filter(e => e.floorId === floorId).map(e => e.id));
         plan.entities = plan.entities.filter(e => e.floorId !== floorId);
         plan.entities.forEach(e => { if (removedIds.has(e.networkId)) e.networkId = ''; });
+        plan.decors.forEach(decor => {
+            if (removedIds.has(decor.accessEntityId)) decor.accessEntityId = '';
+        });
+        plan.transitions.forEach(transition => {
+            if (removedIds.has(transition.accessEntityId)) transition.accessEntityId = '';
+        });
         plan.floors = plan.floors.filter(f => f.id !== floorId);
         sortedFloors().forEach((f, i) => f.order = i);
         remapElevatorBounds(previousOrders);
@@ -1428,6 +1498,7 @@ const Store = (() => {
             autoDiscover: definition.autoDiscover,
             blocksMovement: definition.blocksMovement,
             blocksVision: [...definition.blocksVision],
+            accessEntityId: '',
             privateNote: '',
             playerInfo: ''
         });
@@ -1840,6 +1911,12 @@ const Store = (() => {
     function deleteEntity(entityId) {
         plan.entities = plan.entities.filter(e => e.id !== entityId);
         plan.entities.forEach(e => { if (e.networkId === entityId) e.networkId = ''; });
+        plan.decors.forEach(decor => {
+            if (decor.accessEntityId === entityId) decor.accessEntityId = '';
+        });
+        plan.transitions.forEach(transition => {
+            if (transition.accessEntityId === entityId) transition.accessEntityId = '';
+        });
         touch();
     }
 
@@ -1858,6 +1935,8 @@ const Store = (() => {
         getTokens, floorTokens, getDiscoveries,
         findEntity, findRoom, findDecor, findFloor, findToken, findTransition,
         getEffectiveState, setEntityState,
+        isDecorAccessController, getAccessController, isAccessOpen,
+        getOverlayPreferences, setOverlayVisibility,
         isPlayerView, isDiscovered, isEffectivelyRevealed,
         cameraFeedCameras, isCameraFeedRevealed,
         visibleFloors, visibleRooms, visibleEntities, visibleDecors, visibleTokens, visibleTransitions,
