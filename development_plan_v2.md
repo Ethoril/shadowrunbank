@@ -1406,19 +1406,19 @@ cas particuliers et gardera le projet simple à maintenir.
 
 | Date | Phase | Travail réalisé | Commit |
 |---|---|---|---|
-| 2026-07-15 | Planification | Feuille de route v2 créée et validée | f934af2 |
-| 2026-07-15 | Phase 0 / Phase 1 | Export Firestore de référence, schéma v2, migration validée et séparation des notes | f934af2 |
-| 2026-07-15 | Phase 1 | File séquentielle, révisions transactionnelles, reprise locale et résolution des conflits | f934af2 |
-| 2026-07-15 | Phase 2 | Catalogue déclaratif, catégories, profils d'état et migration des anciens types | f934af2 |
-| 2026-07-15 | Phase 3 | Moteur de couverture, cinq formes, canaux, inspecteur dynamique et révélation indépendante | f934af2 |
-| 2026-07-15 | Phase 4 | Catalogue de décors, édition géométrique, rendu multicouche, occlusion par canal et cache | f934af2 |
-| 2026-07-15 | Phase 5 | Seize dispositifs configurés, couvertures spécialisées et cycles de vie testés | f934af2 |
-| 2026-07-15 | Phase 6 | Pions PJ, transitions multi-étages, exploration et découvertes persistantes | f934af2 |
-| 2026-07-15 | Phase 7 | Historique, duplication, waypoints éditables et interfaces tablette | f934af2 |
-| 2026-07-15 | Phase 8 | Tests unitaires/intégration, snapshot et workflows CI/déploiement manuel préparés | f934af2 |
-| 2026-07-16 | Phases 7 / 8 | Poignées de couverture sur la carte et synchronisation pions/découvertes testée entre deux écrans | f934af2 |
+| 2026-07-15 | Planification | Feuille de route v2 créée et validée | À renseigner |
+| 2026-07-15 | Phase 0 / Phase 1 | Export Firestore de référence, schéma v2, migration validée et séparation des notes | À renseigner |
+| 2026-07-15 | Phase 1 | File séquentielle, révisions transactionnelles, reprise locale et résolution des conflits | À renseigner |
+| 2026-07-15 | Phase 2 | Catalogue déclaratif, catégories, profils d'état et migration des anciens types | À renseigner |
+| 2026-07-15 | Phase 3 | Moteur de couverture, cinq formes, canaux, inspecteur dynamique et révélation indépendante | À renseigner |
+| 2026-07-15 | Phase 4 | Catalogue de décors, édition géométrique, rendu multicouche, occlusion par canal et cache | À renseigner |
+| 2026-07-15 | Phase 5 | Seize dispositifs configurés, couvertures spécialisées et cycles de vie testés | À renseigner |
+| 2026-07-15 | Phase 6 | Pions PJ, transitions multi-étages, exploration et découvertes persistantes | À renseigner |
+| 2026-07-15 | Phase 7 | Historique, duplication, waypoints éditables et interfaces tablette | À renseigner |
+| 2026-07-15 | Phase 8 | Tests unitaires/intégration, snapshot et workflows CI/déploiement manuel préparés | À renseigner |
+| 2026-07-16 | Phases 7 / 8 | Poignées de couverture sur la carte et synchronisation pions/découvertes testée entre deux écrans | À renseigner |
 | 2026-07-16 | Phase 8 | Site v14 publié, règles Firestore déployées et document de production confirmé en schéma v2 révision 9 | `3dce9bf` |
-| 2026-07-16 | Phase 8 | Snapshot cloud et déplacement multi-écrans validés en production ; correction de la recréation des dernières données après suppression ou rechargement local périmé | f934af2 |
+| 2026-07-16 | Phase 8 | Snapshot cloud et déplacement multi-écrans validés en production ; correction de la recréation des dernières données après suppression ou rechargement local périmé | À renseigner |
 | 2026-07-19 | Phase 6 (évolution) | Besoin identifié : cabine d'ascenseur plaçable hors salle et partagée entre étages (7.8), sens de circulation des escaliers (7.9). Logique et points ouverts documentés, développement non commencé | 1bf3f7b |
 | 2026-07-19 | Phase 6 (évolution) | Décisions tranchées : pas de décalage inter-étages, sélecteur d'étage min/max sur l'ascenseur, suppression confirmée des anciens décors avec boîte d'avertissement, doorSide explicite et escaliers limités à deux endpoints (7.10). Développement non commencé | 1bf3f7b |
 | 2026-07-19 | Phase 6 (évolution) | 7.8–7.10 implémentés : cabine générée depuis la transition (géométrie unique, coordonnées partagées, occlusion opaque, fantôme MJ hors porte), bornes min/max avec confirmation, extension auto sur nouvel étage, sens up/down/both des escaliers avec migration de l'ancien bidirectional, limite de deux endpoints, outil MJ de purge des décors obsolètes. 9 tests unitaires ajoutés (24/24 verts) | 1bf3f7b |
