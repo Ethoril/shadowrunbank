@@ -523,6 +523,43 @@ test('les anciennes découvertes de transition migrent vers les points de leur �
         'l’enregistrement global est remplacé par des découvertes par point');
 });
 
+test('la migration ne purge du cloud que les découvertes de transition anciennes', () => {
+    const { context, Store } = loadApplicationCore();
+    const deleted = [];
+    const saved = [];
+    context.window.Cloud = {
+        saveDiscovery: discovery => { saved.push(discovery.id); return Promise.resolve({}); },
+        deleteDiscoveries: ids => { deleted.push(...ids); return Promise.resolve({}); },
+        savePlan: () => Promise.resolve({ revision: 1 })
+    };
+    Store.load();
+    Store.setCloudActive(true);
+    const floors = Store.sortedFloors();
+    const hatch = Store.addTransition('hatch', 'Trappe mixte');
+    Store.addTransitionEndpoint(hatch, floors[0].id, 3, 3);
+    Store.addTransitionEndpoint(hatch, floors[1].id, 5, 5);
+
+    // Enregistrement récent : écrit par un écran encore sur l'ancienne
+    // version — converti localement mais conservé au cloud (sinon sa
+    // découverte lui « disparaît » sous les yeux).
+    Store.applyRemoteDiscoveries([{
+        id: 'transition_' + hatch.id, kind: 'transition', elementId: hatch.id,
+        floorId: floors[0].id, discoveredBy: 'vieux-client', discoveredAt: Date.now()
+    }]);
+    assert.deepEqual(deleted, []);
+    assert.ok(saved.length >= 1, 'les découvertes par point sont poussées');
+    assert.ok(Store.getDiscoveries().every(item => item.kind !== 'transition'));
+
+    // Enregistrement ancien (> période de grâce) : purgé du cloud.
+    Store.applyRemoteDiscoveries([{
+        id: 'transition_' + hatch.id, kind: 'transition', elementId: hatch.id,
+        floorId: floors[0].id, discoveredBy: 'vieux-client',
+        discoveredAt: Date.now() - 7 * 60 * 60 * 1000
+    }]);
+    assert.deepEqual(deleted, ['transition_' + hatch.id]);
+    Store.setCloudActive(false);
+});
+
 test('un groupe de PJ embarque ensemble et arrive en couronne sans empilement', () => {
     const { Store, Exploration } = loadApplicationCore();
     Store.load();

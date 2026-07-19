@@ -1290,7 +1290,13 @@ const Store = (() => {
        autres sorties redeviennent cachées. Un enregistrement dont la
        transition n'est pas (encore) dans le plan est conservé tel quel et
        sera migré à la prochaine passe. Côté MJ connecté, la conversion est
-       poussée au cloud pour que tous les écrans convergent. */
+       poussée au cloud pour que tous les écrans convergent — MAIS un
+       enregistrement récent n'est pas supprimé du cloud : il vient
+       probablement d'un écran qui tourne encore l'ancienne version du code
+       (onglet jamais rechargé, cache) et le lui retirer ferait « disparaître »
+       sa découverte sous ses yeux à chaque tentative. Il sera purgé une fois
+       vieux, quand tous les écrans auront rechargé. */
+    const LEGACY_DISCOVERY_GRACE_MS = 6 * 60 * 60 * 1000;
     function migrateTransitionDiscoveries() {
         const legacy = discoveries.filter(discovery => discovery.kind === 'transition'
             && findTransition(discovery.elementId));
@@ -1316,8 +1322,10 @@ const Store = (() => {
                 additions.forEach(discovery => window.Cloud.saveDiscovery(cloneData(discovery))
                     .catch(error => console.warn('Migration de découverte conservée localement', error)));
             }
-            if (typeof window.Cloud.deleteDiscoveries === 'function') {
-                window.Cloud.deleteDiscoveries([...legacyIds]).catch(error =>
+            const stale = legacy.filter(discovery =>
+                Date.now() - (discovery.discoveredAt || 0) > LEGACY_DISCOVERY_GRACE_MS);
+            if (stale.length && typeof window.Cloud.deleteDiscoveries === 'function') {
+                window.Cloud.deleteDiscoveries(stale.map(discovery => discovery.id)).catch(error =>
                     console.warn('Suppression des découvertes migrées différée', error));
             }
         }
