@@ -214,16 +214,20 @@ const Visibility = (() => {
         container.appendChild(branchHead(branchId, 'Transitions (' + transitions.length + ')'));
         if (collapsed.has(branchId)) return;
         transitions.forEach(transition => {
-            // Une ligne par étage = un point de passage précis (au plus un
-            // endpoint par étage). L'œil dévoile CE point, pas la transition
+            // Une ligne par point de passage présent sur cet étage. Une trappe
+            // ou un passage peut en avoir plusieurs sur le même étage : chacun a
+            // sa ligne et sa lettre (a, b, c…) pour concorder avec l'inspecteur
+            // et l'info-bulle carte. L'œil dévoile CE point, pas la transition
             // entière ; la découverte reste indexée sur la transition.
-            const endpoint = transition.endpoints.find(item => item.floorId === floor.id);
-            if (!endpoint) return;
-            const transitionRow = row(2, floor.id + '_' + transition.id, false, endpoint,
-                'Révéler / cacher ce point de passage', transition.name, '#ffe66d',
-                selectOnMap('transition', transition.id), 'revealed', 'transition', transition.id);
-            if (isSelected('transition', transition.id)) transitionRow.classList.add('selected');
-            container.appendChild(transitionRow);
+            transition.endpoints.filter(item => item.floorId === floor.id).forEach(endpoint => {
+                const letter = Store.endpointLetter(transition, endpoint);
+                const label = transition.name + (letter ? ' ' + letter : '');
+                const transitionRow = row(2, floor.id + '_' + transition.id + '_' + endpoint.id, false,
+                    endpoint, 'Révéler / cacher ce point de passage', label, '#ffe66d',
+                    selectOnMap('transition', transition.id), 'revealed', 'transition', transition.id);
+                if (isSelected('transition', transition.id)) transitionRow.classList.add('selected');
+                container.appendChild(transitionRow);
+            });
         });
     }
 

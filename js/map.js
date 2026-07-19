@@ -617,7 +617,9 @@ const MapView = (() => {
                 div.style.left = (endpoint.x * cellPx) + 'px';
                 div.style.top = (endpoint.y * cellPx) + 'px';
                 div.dataset.symbol = labels[transition.type] || 'TR';
-                div.title = transition.name + (endpoint.label ? ' — ' + endpoint.label : '');
+                const letter = Store.endpointLetter(transition, endpoint);
+                div.title = transition.name + (endpoint.label ? ' — ' + endpoint.label : '')
+                    + (letter ? ' (' + letter + ')' : '');
                 const transitionIcon = icons[transition.type];
                 if (transitionIcon) {
                     div.classList.add('has-icon');
