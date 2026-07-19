@@ -875,16 +875,24 @@
                 Store.isDiscovered('transition', stairs.id)
                 && Store.isDiscovered('floor', phase6TargetFloor.id));
 
-            stairs.bidirectional = false;
+            // 7.9 : le sens `up` n'autorise que l'étage bas (source) vers le haut.
+            Store.setStairsDirection(stairs, 'up');
             check('transition : sens unique respecté',
                 Exploration.destinationsFor(stairs, targetEndpoint).length === 0
                 && Exploration.moveThroughTransition(scout, stairs, targetEndpoint, sourceEndpoint) === false);
-            stairs.bidirectional = true;
+            Store.setStairsDirection(stairs, 'both');
             const thirdFloor = Store.addFloor('Toit transition');
-            Store.addTransitionEndpoint(stairs, thirdFloor.id, 7.5, 2.5);
-            check('transition : ascenseur/passage à trois destinations pris en charge',
-                Exploration.destinationsFor(stairs, sourceEndpoint).length === 2
+            // 7.10 : un escalier refuse un troisième endpoint ; les liaisons
+            // sans cabine (passage) desservent toujours plusieurs destinations.
+            const tripleShaft = Store.addTransition('passage', 'Passage triple');
+            const tripleSource = Store.addTransitionEndpoint(tripleShaft, phase6Floor.id, 7.5, 2.5);
+            Store.addTransitionEndpoint(tripleShaft, phase6TargetFloor.id, 7.5, 2.5);
+            Store.addTransitionEndpoint(tripleShaft, thirdFloor.id, 7.5, 2.5);
+            check('transition : escalier limité à deux points, trois destinations via passage',
+                Store.addTransitionEndpoint(stairs, thirdFloor.id, 7.5, 2.5) === null
+                && Exploration.destinationsFor(tripleShaft, tripleSource).length === 2
                 && !Store.isEffectivelyRevealed(thirdFloor, 'floor'));
+            Store.deleteTransition(tripleShaft.id);
 
             const accessLock = Store.addEntity('keypad', phase6TargetFloor.id, 4, 4, 'VERROU');
             stairs.accessEntityId = accessLock.id;
