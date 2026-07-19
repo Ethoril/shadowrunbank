@@ -817,9 +817,16 @@ const Inspector = (() => {
                 transition.bidirectional = value; refresh();
             }));
         }
-        body.appendChild(revealToggle('Transition', transition, () => {
-            MapView.renderTransitions(); Visibility.render();
-        }));
+        // Révélation par point de passage : chaque endpoint (un par étage
+        // relié) se dévoile indépendamment, pour n'exposer aux joueurs que le
+        // point choisi sans trahir les autres extrémités de la liaison.
+        transition.endpoints.forEach(endpoint => {
+            const floor = Store.findFloor(endpoint.floorId);
+            const floorName = floor ? floor.name : 'Étage inconnu';
+            body.appendChild(revealToggle('Point « ' + floorName + ' »', endpoint, () => {
+                MapView.renderTransitions(); Visibility.render();
+            }));
+        });
 
         const accessOptions = { '': '[Aucun verrou associé]' };
         Store.getPlan().entities.filter(entity => EntityCatalog.get(entity.type).accessControl)

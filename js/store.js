@@ -152,7 +152,14 @@ const Store = (() => {
         transition.type = TRANSITION_TYPES.includes(transition.type) ? transition.type : 'stairs';
         if (typeof transition.name !== 'string' || !transition.name) transition.name = 'Nouvelle liaison';
         transition.state = transition.state === 'offline' ? 'offline' : 'active';
-        transition.revealed = transition.revealed === true;
+        // La révélation aux joueurs vit désormais sur chaque endpoint (un
+        // point de passage par étage) et non sur la transition entière : le MJ
+        // dévoile un point sans exposer les autres. Migration : un ancien
+        // `transition.revealed` global rejaillit une fois sur tous les points,
+        // puis le drapeau global est retiré pour ne pas se réappliquer au
+        // rechargement (sinon masquer un point serait annulé à chaque save).
+        const legacyRevealed = transition.revealed === true;
+        delete transition.revealed;
         transition.accessEntityId = typeof transition.accessEntityId === 'string'
             ? transition.accessEntityId : '';
         transition.endpoints = Array.isArray(transition.endpoints) ? transition.endpoints : [];
@@ -162,7 +169,8 @@ const Store = (() => {
             x: clampNumber(endpoint.x, 0.5, Math.max(0.5, grid.cols - 0.5), 0.5),
             y: clampNumber(endpoint.y, 0.5, Math.max(0.5, grid.rows - 0.5), 0.5),
             label: typeof endpoint.label === 'string' ? endpoint.label : '',
-            hasDoor: endpoint.hasDoor !== false
+            hasDoor: endpoint.hasDoor !== false,
+            revealed: endpoint.revealed === true || legacyRevealed
         }));
 
         if (transition.type === 'stairs') {
@@ -1226,7 +1234,24 @@ const Store = (() => {
         return false;
     }
 
+    /* Un point de passage est visible aux joueurs s'il est dévoilé
+       individuellement par le MJ, ou si un pion a découvert la transition
+       (la découverte reste au niveau transition → révèle tous ses points).
+       Le flux caméra, temporaire, est géré au niveau transition côté carte. */
+    function isEndpointRevealed(transition, endpoint) {
+        return !!(endpoint && (endpoint.revealed
+            || (transition && isDiscovered('transition', transition.id))));
+    }
+
+    /* Au niveau transition : « effectivement révélée » = au moins un point
+       visible. Sert aux vérifications globales (sélection, interaction). */
     function isEffectivelyRevealed(item, kind) {
+        if (kind === 'transition') {
+            return !!(item && ((Array.isArray(item.endpoints)
+                    && item.endpoints.some(endpoint => endpoint.revealed))
+                || isDiscovered('transition', item.id)
+                || (isPlayerView() && isCameraFeedRevealed(item, kind))));
+        }
         return !!(item && (item.revealed || isDiscovered(kind, item.id)
             || (isPlayerView() && isCameraFeedRevealed(item, kind))));
     }
@@ -1385,7 +1410,7 @@ const Store = (() => {
             if (!anchor || transition.endpoints.some(item => item.floorId === floor.id)) return;
             transition.endpoints.push({
                 id: uid('ep'), floorId: floor.id, x: anchor.x, y: anchor.y,
-                label: floor.name, hasDoor: true
+                label: floor.name, hasDoor: true, revealed: false
             });
         });
         touch();
@@ -1566,7 +1591,8 @@ const Store = (() => {
             id: uid('ep'), floorId,
             x: clampNumber(anchor ? anchor.x : x, 0.5, Math.max(0.5, plan.grid.cols - 0.5), 0.5),
             y: clampNumber(anchor ? anchor.y : y, 0.5, Math.max(0.5, plan.grid.rows - 0.5), 0.5),
-            label: label || (findFloor(floorId) ? findFloor(floorId).name : '')
+            label: label || (findFloor(floorId) ? findFloor(floorId).name : ''),
+            revealed: false
         };
         if (transition.type === 'elevator') endpoint.hasDoor = true;
         transition.endpoints.push(endpoint);
@@ -1605,7 +1631,7 @@ const Store = (() => {
             if (transition.endpoints.some(item => item.floorId === floor.id)) return;
             transition.endpoints.push({
                 id: uid('ep'), floorId: floor.id, x: anchorX, y: anchorY,
-                label: floor.name, hasDoor: true
+                label: floor.name, hasDoor: true, revealed: false
             });
             added += 1;
         });
@@ -1978,7 +2004,7 @@ const Store = (() => {
         getEffectiveState, setEntityState,
         isDecorAccessController, getAccessController, isAccessOpen,
         getOverlayPreferences, setOverlayVisibility,
-        isPlayerView, isDiscovered, isEffectivelyRevealed,
+        isPlayerView, isDiscovered, isEffectivelyRevealed, isEndpointRevealed,
         cameraFeedCameras, isCameraFeedRevealed,
         visibleFloors, visibleRooms, visibleEntities, visibleDecors, visibleTokens, visibleTransitions,
         ensureVisibleView,
