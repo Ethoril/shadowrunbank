@@ -850,9 +850,9 @@
             check('exploration : autoDiscover false et couverture indépendante',
                 !Store.isDiscovered('entity', hiddenLaser.id)
                 && autoCamera.coverage && autoCamera.coverage.revealed === false);
-            check('exploration : ligne de vue bloquée par un décor opaque',
+            check('exploration : les objets évidents de la salle ignorent les occultants',
                 MapView.isLineBlocked(phase6Floor.id, scout, hiddenGuard, 'optical', 0.4)
-                && !Store.isDiscovered('entity', hiddenGuard.id));
+                && Store.isDiscovered('entity', hiddenGuard.id));
             check('exploration : révélation manuelle et découverte restent indépendantes',
                 !autoCamera.revealed && Store.isEffectivelyRevealed(autoCamera, 'entity'));
 
