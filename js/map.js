@@ -12,6 +12,9 @@ const MapView = (() => {
     const HACKED_COLOR = '#4af626';
 
     let cellPx = 30;  // taille d'une case logique à l'écran, recalculée à chaque rendu
+    let zoom = 1;     // facteur appliqué à la taille "plein cadre" (1 = tout l'étage visible)
+    const ZOOM_MIN = 1;
+    const ZOOM_MAX = 6;
     let walls = [];   // segments de murs de l'étage courant (coordonnées grille)
     const occluderCache = new Map();
     let occluderBuilds = 0;
@@ -51,19 +54,48 @@ const MapView = (() => {
         return image;
     }
 
-    /* --- Dimensionnement : la grille logique remplit le wrapper en cases carrées --- */
+    /* --- Dimensionnement : la grille logique remplit le wrapper en cases carrées.
+       Au-delà du zoom 1, le plateau déborde et le wrapper devient scrollable
+       (pan à la molette-clic ou aux ascenseurs). --- */
     function layoutBoard() {
         const wrapper = document.getElementById('map-wrapper');
         const grid = Store.getPlan().grid;
         const w = wrapper.clientWidth, h = wrapper.clientHeight;
-        cellPx = Math.max(8, Math.floor(Math.min(w / grid.cols, h / grid.rows)));
+        const fitPx = Math.max(8, Math.floor(Math.min(w / grid.cols, h / grid.rows)));
+        cellPx = Math.max(8, Math.round(fitPx * zoom));
         const bw = cellPx * grid.cols, bh = cellPx * grid.rows;
         const b = board();
         b.style.width = bw + 'px';
         b.style.height = bh + 'px';
-        b.style.left = Math.floor((w - bw) / 2) + 'px';
-        b.style.top = Math.floor((h - bh) / 2) + 'px';
+        b.style.left = Math.max(0, Math.floor((w - bw) / 2)) + 'px';
+        b.style.top = Math.max(0, Math.floor((h - bh) / 2)) + 'px';
         b.style.backgroundSize = cellPx + 'px ' + cellPx + 'px';
+    }
+
+    /* --- Zoom : re-rendu complet à la nouvelle taille de case, puis le point
+       grille sous l'ancre (coordonnées client) est remis sous l'ancre en
+       ajustant le scroll du wrapper. Sans ancre : centre de la vue. --- */
+    function setZoom(value, anchorX, anchorY) {
+        const wrapper = document.getElementById('map-wrapper');
+        const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, value));
+        if (Math.abs(next - zoom) < 1e-3) return;
+        const viewRect = wrapper.getBoundingClientRect();
+        const ax = anchorX === undefined ? viewRect.left + wrapper.clientWidth / 2 : anchorX;
+        const ay = anchorY === undefined ? viewRect.top + wrapper.clientHeight / 2 : anchorY;
+        const before = gridPosFromEvent({ clientX: ax, clientY: ay });
+        zoom = next;
+        render();
+        const rect = board().getBoundingClientRect();
+        wrapper.scrollLeft += Math.round(rect.left + before.x * cellPx - ax);
+        wrapper.scrollTop += Math.round(rect.top + before.y * cellPx - ay);
+    }
+
+    function zoomBy(factor, anchorX, anchorY) {
+        setZoom(zoom * factor, anchorX, anchorY);
+    }
+
+    function resetZoom() {
+        setZoom(ZOOM_MIN);
     }
 
     /* Coordonnées grille (flottantes) depuis un événement souris */
@@ -1073,6 +1105,8 @@ const MapView = (() => {
         const target = kind === 'floor' ? board()
             : [...candidates].find(element => element.dataset[dataProperty] === id);
         if (!target) return false;
+        // Zoomé ailleurs : ramène l'élément dans la zone visible avant le pulse
+        if (target !== board()) target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         target.classList.remove('map-focus-pulse');
         void target.offsetWidth;
         target.classList.add('map-focus-pulse');
@@ -1091,6 +1125,9 @@ const MapView = (() => {
         pointInPolygon, cameraFeedSnapshot, isCameraFeedVisible,
         updateCameraFeedVisibility,
         focusElement,
+        setZoom, zoomBy, resetZoom,
+        getZoom: () => zoom,
+        getZoomRange: () => ({ min: ZOOM_MIN, max: ZOOM_MAX }),
         getOccluderCacheStats: () => ({ entries: occluderCache.size, builds: occluderBuilds }),
         getWalls: () => walls
     };

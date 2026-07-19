@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shadowrun Bank Planner :: Overlord_View</title>
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=18">
+    <link rel="stylesheet" href="css/style.css?v=19">
 </head>
 <body>
 
@@ -116,6 +116,12 @@
                     <div id="tokens-layer"></div>
                 </div>
             </div>
+            <div class="zoom-controls" role="group" aria-label="Zoom de la carte">
+                <button id="zoom-out" type="button" title="Dézoomer (molette bas)">−</button>
+                <span id="zoom-level">100%</span>
+                <button id="zoom-in" type="button" title="Zoomer (molette haut)">＋</button>
+                <button id="zoom-reset" type="button" title="Vue d'ensemble">⛶</button>
+            </div>
         </div>
 
         <!-- Inspecteur (contenu généré par inspector.js) -->
@@ -133,10 +139,10 @@
     <script src="js/catalog.js?v=20"></script>
     <script src="js/store.js?v=20"></script>
     <script src="js/anim.js?v=20"></script>
-    <script src="js/map.js?v=20"></script>
+    <script src="js/map.js?v=21"></script>
     <script src="js/exploration.js?v=20"></script>
     <script src="js/inspector.js?v=20"></script>
-    <script src="js/editor.js?v=20"></script>
+    <script src="js/editor.js?v=21"></script>
     <script src="js/visibility.js?v=20"></script>
     <script src="js/main.js?v=20"></script>
     <!-- Firebase (phase 3) : module ES ; en cas d'échec de chargement
