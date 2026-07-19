@@ -546,7 +546,9 @@ const MapView = (() => {
         const selection = Store.ui.selection;
         Store.elevatorCabinsOnFloor(floor.id).forEach(cabin => {
             const transition = cabin.transition;
-            const revealed = Store.isEffectivelyRevealed(transition, 'transition');
+            // Révélation par arrêt : la porte de cet étage n'apparaît que si
+            // son propre point est dévoilé/découvert (ou vu via une caméra).
+            const revealed = Store.isEndpointRevealed(transition, cabin.endpoint);
             if (Store.isPlayerView()) {
                 if (!cabin.hasDoor) return;
                 if (!revealed && !(feed && feed.transitionIds.includes(transition.id))) return;
@@ -590,21 +592,26 @@ const MapView = (() => {
         const labels = { stairs: 'ESC', elevator: 'ELV', ladder: 'ECH', hatch: 'TRP', passage: 'PAS' };
         const icons = { stairs: 'stairs', elevator: 'elevator', ladder: 'ladder', hatch: 'hatch', passage: 'opening' };
         const feed = feedSnapshot(floor.id, now, snapshot);
-        const transitions = Store.isPlayerView()
-            ? cameraVisibleItems(Store.getPlan().transitions.filter(transition =>
-                transition.endpoints.some(endpoint => endpoint.floorId === floor.id)), 'transition', feed)
-            : Store.visibleTransitions(floor.id);
+        // La visibilité se décide point par point : un endpoint dévoilé (ou
+        // découvert, ou vu via caméra) apparaît sans exposer les autres points
+        // de la même transition. On part donc de toutes les transitions ayant
+        // un point sur l'étage et on filtre endpoint par endpoint plus bas.
+        const transitions = Store.getPlan().transitions.filter(transition =>
+            transition.endpoints.some(endpoint => endpoint.floorId === floor.id));
         transitions.forEach(transition => {
+            const cameraSeen = !!(feed && feed.transitionIds.includes(transition.id));
             transition.endpoints.filter(endpoint => endpoint.floorId === floor.id).forEach(endpoint => {
                 // Sans porte, la gaine seule occupe l'étage. Même le MJ ne
                 // voit pas d'icône d'arrêt, pour éviter toute ambiguïté.
                 const doorless = transition.type === 'elevator' && endpoint.hasDoor === false;
                 if (doorless) return;
+                const revealed = Store.isEndpointRevealed(transition, endpoint) || cameraSeen;
+                if (Store.isPlayerView() && !revealed) return;
                 const div = document.createElement('div');
                 div.className = 'transition-endpoint state-' + transition.state
                     + (Store.ui.selection && Store.ui.selection.kind === 'transition'
                         && Store.ui.selection.id === transition.id ? ' selected' : '')
-                    + (Store.isPlayerView() || Store.isEffectivelyRevealed(transition, 'transition') ? '' : ' unrevealed');
+                    + (Store.isPlayerView() || revealed ? '' : ' unrevealed');
                 div.dataset.transitionId = transition.id;
                 div.dataset.endpointId = endpoint.id;
                 div.style.left = (endpoint.x * cellPx) + 'px';

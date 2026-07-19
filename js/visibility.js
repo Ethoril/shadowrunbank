@@ -214,9 +214,14 @@ const Visibility = (() => {
         container.appendChild(branchHead(branchId, 'Transitions (' + transitions.length + ')'));
         if (collapsed.has(branchId)) return;
         transitions.forEach(transition => {
-            const transitionRow = row(2, transition.id, false, transition,
-                'Révéler / cacher cette transition', transition.name, '#ffe66d',
-                selectOnMap('transition', transition.id), 'revealed', 'transition');
+            // Une ligne par étage = un point de passage précis (au plus un
+            // endpoint par étage). L'œil dévoile CE point, pas la transition
+            // entière ; la découverte reste indexée sur la transition.
+            const endpoint = transition.endpoints.find(item => item.floorId === floor.id);
+            if (!endpoint) return;
+            const transitionRow = row(2, floor.id + '_' + transition.id, false, endpoint,
+                'Révéler / cacher ce point de passage', transition.name, '#ffe66d',
+                selectOnMap('transition', transition.id), 'revealed', 'transition', transition.id);
             if (isSelected('transition', transition.id)) transitionRow.classList.add('selected');
             container.appendChild(transitionRow);
         });
@@ -324,7 +329,8 @@ const Visibility = (() => {
         plan.floors.forEach(f => f.revealed = value);
         plan.rooms.forEach(r => r.revealed = value);
         plan.decors.forEach(decor => decor.revealed = value);
-        plan.transitions.forEach(transition => transition.revealed = value);
+        plan.transitions.forEach(transition =>
+            transition.endpoints.forEach(endpoint => { endpoint.revealed = value; }));
         Store.getTokens().forEach(token => { token.visible = value; Store.saveToken(token); });
         plan.entities.forEach(e => {
             e.revealed = value;

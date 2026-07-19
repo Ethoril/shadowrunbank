@@ -840,9 +840,11 @@ test('un geste tactile respecte le verrou puis confirme une transition', async (
         const sourceFloor = Store.currentFloor();
         const targetFloor = Store.addFloor('Destination tactile');
         const transition = Store.addTransition('stairs', 'Escalier tactile');
-        transition.revealed = true;
         const source = Store.addTransitionEndpoint(transition, sourceFloor.id, 11, 5);
         const destination = Store.addTransitionEndpoint(transition, targetFloor.id, 6, 6);
+        // La révélation aux joueurs est désormais par point de passage.
+        source.revealed = true;
+        destination.revealed = true;
         const token = Store.addToken(sourceFloor.id, 7, 5);
         token.playerMovable = true;
         token.locked = true;
