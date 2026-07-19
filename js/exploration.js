@@ -11,6 +11,10 @@ const Exploration = (() => {
         return !!room && Store.roomAt(item.floorId, Math.floor(item.x), Math.floor(item.y)) === room;
     }
 
+    function isAutomaticallyDiscovered(entity) {
+        return EntityCatalog.get(entity.type).autoDiscover === true;
+    }
+
     function discoverFromToken(token) {
         const floor = Store.findFloor(token.floorId);
         if (!floor) return [];
@@ -21,17 +25,14 @@ const Exploration = (() => {
         if (Store.addDiscovery('room', room, token.id)) discovered.push({ kind: 'room', id: room.id });
 
         Store.floorEntities(token.floorId).forEach(entity => {
-            if (entity.autoDiscover === false || !inSameRoom(entity, room)) return;
-            if (!MapView.isLineBlocked(token.floorId, token, entity, 'optical', 0.4)
-                && Store.addDiscovery('entity', entity, token.id)) {
+            if (!isAutomaticallyDiscovered(entity) || !inSameRoom(entity, room)) return;
+            if (Store.addDiscovery('entity', entity, token.id)) {
                 discovered.push({ kind: 'entity', id: entity.id });
             }
         });
         Store.floorDecors(token.floorId).forEach(decor => {
-            if (decor.autoDiscover === false || !inSameRoom(decor, room)) return;
-            if (!MapView.isLineBlocked(token.floorId, token, decor, 'optical',
-                Math.max(0.35, Math.min(decor.width, decor.height) / 2))
-                && Store.addDiscovery('decor', decor, token.id)) {
+            if (!inSameRoom(decor, room)) return;
+            if (Store.addDiscovery('decor', decor, token.id)) {
                 discovered.push({ kind: 'decor', id: decor.id });
             }
         });

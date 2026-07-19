@@ -588,6 +588,46 @@ test('le catalogue expose tous les dispositifs attendus', () => {
     });
 });
 
+test('entrer dans une salle révèle les catégories évidentes et garde les autres dissimulées', () => {
+    const { Store, MapView, EntityCatalog, Exploration } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[1];
+    const token = Store.addToken(floor.id, 5, 7);
+
+    const visibleTypes = [
+        'steel_grate', 'mad_gate', 'maglock', 'retina_scanner', 'dna_analyzer',
+        'elevator', 'camera', 'combat_drone', 'armed_guard', 'bank_employee',
+        'civilian', 'network_node'
+    ];
+    const hiddenTypes = [
+        'infrared_motion_sensor', 'detection_laser', 'pressure_plate', 'sensor',
+        'micro_security_drone', 'automatic_turret', 'drone', 'security_mage',
+        'mana_barrier', 'patrol_spirit'
+    ];
+    const visible = visibleTypes.map(type => Store.addEntity(type, floor.id, 5, 7, type));
+    const hidden = hiddenTypes.map(type => Store.addEntity(type, floor.id, 5, 7, type));
+    const decors = ['wall', 'safe', 'floor_marking'].map(type =>
+        Store.addDecor(type, floor.id, 5, 7));
+
+    // Simule aussi un ancien plan où un décor avait été explicitement marqué
+    // non découvrable : sa présence dans la salle prime désormais.
+    decors[1].autoDiscover = false;
+    MapView.isLineBlocked = () => true;
+    Exploration.discoverFromToken(token);
+
+    visible.forEach(entity => {
+        assert.equal(Store.isDiscovered('entity', entity.id), true, entity.type);
+        assert.equal(EntityCatalog.get(entity.type).autoDiscover, true, entity.type);
+    });
+    hidden.forEach(entity => {
+        assert.equal(Store.isDiscovered('entity', entity.id), false, entity.type);
+        assert.equal(EntityCatalog.get(entity.type).autoDiscover, false, entity.type);
+    });
+    decors.forEach(decor => {
+        assert.equal(Store.isDiscovered('decor', decor.id), true, decor.type);
+    });
+});
+
 test('un décor lié à un contrôle d’accès reflète son état effectif', () => {
     const { Store } = loadApplicationCore();
     Store.load();

@@ -256,10 +256,6 @@ const Inspector = (() => {
         groupContinuousInput(playerInfo, 'Modifier une information joueur');
         body.appendChild(field('Information joueurs :', playerInfo));
 
-        body.appendChild(checkboxField('Découverte automatique', ent.autoDiscover !== false, value => {
-            ent.autoDiscover = value;
-            Store.touch();
-        }));
 
         body.appendChild(revealToggle('Dispositif', ent, () => MapView.renderEntities()));
 
@@ -609,10 +605,6 @@ const Inspector = (() => {
         groupContinuousInput(playerInfo, 'Modifier une information joueur');
         body.appendChild(field('Information joueurs :', playerInfo));
 
-        body.appendChild(checkboxField('Découverte automatique', decor.autoDiscover !== false, value => {
-            decor.autoDiscover = value;
-            Store.touch();
-        }));
         body.appendChild(revealToggle('Décor', decor, () => MapView.render()));
         body.appendChild(sep());
         const actions = document.createElement('div');
