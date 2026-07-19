@@ -576,7 +576,14 @@ test('le catalogue expose tous les dispositifs attendus', () => {
     const { EntityCatalog } = loadApplicationCore();
     const types = Object.keys(EntityCatalog.types);
     assert.ok(types.length >= 16);
-    ['camera', 'armed_guard', 'network_node', 'mana_barrier'].forEach(type => {
+    ['camera', 'armed_guard', 'bank_employee', 'civilian', 'network_node', 'mana_barrier'].forEach(type => {
         assert.ok(EntityCatalog.types[type], type + ' absent du catalogue');
+    });
+    ['bank_employee', 'civilian'].forEach(type => {
+        const definition = EntityCatalog.get(type);
+        assert.equal(definition.canPatrol, true, type + ' doit pouvoir patrouiller');
+        assert.equal(definition.armed, false, type + ' ne doit pas être armé');
+        assert.equal(definition.coverageType, 'none', type + ' ne doit pas avoir de zone de détection');
+        assert.equal(definition.stateProfile, 'personnel');
     });
 });

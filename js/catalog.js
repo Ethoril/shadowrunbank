@@ -81,6 +81,8 @@ const EntityCatalog = (() => {
         drone: define({ category: 'defense', name: 'Drone à préciser', label: 'DRN', icon: 'drone', color: '#ff2a9d', networkable: true, canPatrol: true, coverageType: 'cone', coverageChannel: 'optical', defaultCoverage: { angle: 60, range: 6 }, canSweep: true, stateProfile: 'drone' }),
 
         armed_guard: define({ category: 'personnel', name: 'Garde armé', label: 'GRD', icon: 'armed-guard', color: '#4af626', canPatrol: true, coverageType: 'cone', coverageChannel: 'optical', defaultCoverage: { angle: 100, range: 5 }, armed: true, stateProfile: 'personnel' }),
+        bank_employee: define({ category: 'personnel', name: 'Employé de banque', label: 'EMP', icon: 'bank-employee', color: '#ffca28', canPatrol: true, stateProfile: 'personnel' }),
+        civilian: define({ category: 'personnel', name: 'Civil', label: 'CIV', icon: 'civilian', color: '#b0bec5', canPatrol: true, stateProfile: 'personnel' }),
 
         security_mage: define({ category: 'magic', name: 'Mage de sécurité', label: 'MAG', icon: 'security-mage', color: '#ab47bc', canPatrol: true, coverageType: 'circle', coverageChannel: 'astral', defaultCoverage: { radius: 5 }, magical: true, stateProfile: 'magical' }),
         mana_barrier: define({ category: 'magic', name: 'Barrière de mana', label: 'BAR', icon: 'mana-barrier', color: '#bd00ff', blocksVision: ['astral'], magical: true, stateProfile: 'magical' }),
