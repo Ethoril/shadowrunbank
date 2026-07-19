@@ -918,13 +918,16 @@ test('un geste tactile respecte le verrou puis confirme une transition', async (
     tokenCenter = await centerOf(tokenSelector);
     const endpointCenter = await centerOf(
         `.transition-endpoint[data-transition-id="${ids.transition}"]`);
-    let confirmation = '';
-    page.once('dialog', async dialog => {
-        confirmation = dialog.message();
-        await dialog.accept();
-    });
     await touchDrag(tokenCenter, endpointCenter);
     await page.waitForTimeout(250);
+    // La modale tactile remplace confirm() : titre + destination en bouton.
+    assert.equal(await page.locator('.transition-dialog').count(), 1);
+    assert.match(await page.locator('.transition-dialog-title').textContent(),
+        /Escalier tactile/);
+    assert.equal(await page.locator('.transition-destination').count(), 1);
+    await page.locator('.transition-destination').tap();
+    await page.waitForTimeout(250);
+    assert.equal(await page.locator('.transition-dialog').count(), 0);
     const arrival = await page.evaluate(id => {
         const token = Store.findToken(id);
         return {
@@ -936,8 +939,7 @@ test('un geste tactile respecte le verrou puis confirme une transition', async (
         };
     }, ids.token);
     assert.equal(arrival.floorId, ids.targetFloor,
-        JSON.stringify({ confirmation, arrival, expected: ids }));
-    assert.match(confirmation, /Escalier tactile/);
+        JSON.stringify({ arrival, expected: ids }));
     assert.equal(arrival.currentFloorId, ids.targetFloor);
     assert.equal(arrival.x, ids.destination.x);
     assert.equal(arrival.y, ids.destination.y);
@@ -945,6 +947,78 @@ test('un geste tactile respecte le verrou puis confirme une transition', async (
         event.type === 'pointerdown' && event.pointerType === 'touch'));
     assert.ok(arrival.pointerLog.some(event =>
         event.type === 'pointerup' && event.pointerType === 'touch'));
+    await context.close();
+});
+
+test('la modale ascenseur embarque plusieurs PJ vers l’étage choisi', async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await context.route('**/js/cloud.js*', route => route.abort());
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html');
+    const ids = await page.evaluate(() => {
+        const floors = Store.sortedFloors();
+        const elevator = Store.addTransition('elevator', 'Monte-charge');
+        const stops = floors.slice(0, 3).map(floor =>
+            Store.addTransitionEndpoint(elevator, floor.id, 6, 6));
+        stops[0].revealed = true;
+        // PJ meneur à côté de la cabine, un PJ dans la cabine (coché
+        // d'office), un PJ à proximité (proposé décoché).
+        const leader = Store.addToken(floors[0].id, 4, 6, 'Meneur');
+        const inside = Store.addToken(floors[0].id, 6.5, 6, 'Dans la cabine');
+        const nearby = Store.addToken(floors[0].id, 7.2, 6.8, 'À proximité');
+        [leader, inside, nearby].forEach(token => { token.playerMovable = true; });
+        Store.ui.activeTool = 'select';
+        Store.ui.readOnly = true;
+        App.renderAll();
+        return {
+            elevator: elevator.id, floorIds: floors.map(floor => floor.id),
+            leader: leader.id, inside: inside.id, nearby: nearby.id,
+            floor2Name: floors[2].name
+        };
+    });
+
+    async function centerOf(selector) {
+        const box = await page.locator(selector).boundingBox();
+        assert.ok(box, selector + ' sans géométrie');
+        return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    }
+
+    const leaderCenter = await centerOf(`.runner-token[data-id="${ids.leader}"]`);
+    const endpointCenter = await centerOf(
+        `.transition-endpoint[data-transition-id="${ids.elevator}"]`);
+    await page.mouse.move(leaderCenter.x, leaderCenter.y);
+    await page.mouse.down();
+    await page.waitForTimeout(200);
+    await page.mouse.move(endpointCenter.x, endpointCenter.y, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+
+    assert.equal(await page.locator('.transition-dialog').count(), 1);
+    // Boutons : ascenseur → noms d'étages réels même non explorés.
+    assert.equal(await page.locator('.transition-destination').count(), 2);
+    // PJ dans la cabine précoché, PJ à proximité décoché.
+    const riders = page.locator('.transition-rider input:not(:disabled)');
+    assert.equal(await riders.count(), 2);
+    assert.equal(await riders.nth(0).isChecked(), true);
+    assert.equal(await riders.nth(1).isChecked(), false);
+    await riders.nth(1).check();
+    await page.locator('.transition-destination', { hasText: ids.floor2Name }).click();
+    await page.waitForTimeout(250);
+
+    assert.equal(await page.locator('.transition-dialog').count(), 0);
+    const result = await page.evaluate(ids => {
+        const positions = [ids.leader, ids.inside, ids.nearby].map(id => {
+            const token = Store.findToken(id);
+            return { floorId: token.floorId, x: token.x, y: token.y };
+        });
+        return { positions, currentFloorId: Store.ui.currentFloorId };
+    }, ids);
+    result.positions.forEach(position =>
+        assert.equal(position.floorId, ids.floorIds[2]));
+    assert.equal(result.currentFloorId, ids.floorIds[2]);
+    // Arrivée en couronne : pas d'empilement parfait.
+    const spots = new Set(result.positions.map(position => position.x + '_' + position.y));
+    assert.equal(spots.size, 3);
     await context.close();
 });
 

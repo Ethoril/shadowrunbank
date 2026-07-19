@@ -143,7 +143,7 @@ const Exploration = (() => {
             && !(transition.type === 'elevator' && endpoint.hasDoor === false));
     }
 
-    function moveThroughTransition(token, transition, sourceEndpoint, destination) {
+    function applyTransitionMove(token, transition, sourceEndpoint, destination, offset) {
         if (!token || !transition || transition.state !== 'active' || !destination) return false;
         if (transition.type === 'elevator' && sourceEndpoint
             && sourceEndpoint.hasDoor === false) return false;
@@ -151,16 +151,38 @@ const Exploration = (() => {
         if (!allowed.some(endpoint => endpoint.id === destination.id)) return false;
         const access = transition.accessEntityId ? Store.findEntity(transition.accessEntityId) : null;
         if (access && Store.getEffectiveState(access) === 'active') return false;
+        const grid = Store.getPlan().grid;
         token.floorId = destination.floorId;
-        token.x = destination.x;
-        token.y = destination.y;
+        token.x = Math.min(Math.max(destination.x + (offset ? offset.x : 0), 0.5), grid.cols - 0.5);
+        token.y = Math.min(Math.max(destination.y + (offset ? offset.y : 0), 0.5), grid.rows - 0.5);
         token.updatedAt = Date.now();
         Store.ui.currentFloorId = destination.floorId;
         Store.addDiscovery('transition', transition, token.id, sourceEndpoint.floorId);
         discoverFromToken(token);
         Store.commitTokenPosition(token);
+        return true;
+    }
+
+    function moveThroughTransition(token, transition, sourceEndpoint, destination) {
+        if (!applyTransitionMove(token, transition, sourceEndpoint, destination)) return false;
         if (typeof App !== 'undefined') App.renderAll();
         return true;
+    }
+
+    /* Plusieurs PJ empruntent la transition d'un coup (cabine d'ascenseur).
+       Le premier arrive sur le point, les suivants en couronne autour pour
+       rester lisibles. Renvoie le nombre de pions effectivement déplacés. */
+    const GROUP_OFFSETS = [
+        { x: 0, y: 0 }, { x: 0.7, y: 0 }, { x: -0.7, y: 0 }, { x: 0, y: 0.7 },
+        { x: 0, y: -0.7 }, { x: 0.7, y: 0.7 }, { x: -0.7, y: -0.7 },
+        { x: 0.7, y: -0.7 }, { x: -0.7, y: 0.7 }
+    ];
+    function moveGroupThroughTransition(tokens, transition, sourceEndpoint, destination) {
+        const moved = tokens.filter((token, index) => applyTransitionMove(
+            token, transition, sourceEndpoint, destination,
+            GROUP_OFFSETS[index % GROUP_OFFSETS.length])).length;
+        if (moved && typeof App !== 'undefined') App.renderAll();
+        return moved;
     }
 
     // Dans un ascenseur, les boutons sont visibles : on connaît donc le nom des
@@ -177,6 +199,15 @@ const Exploration = (() => {
         const { transition, endpoint } = found;
         const destinations = destinationsFor(transition, endpoint);
         if (!destinations.length) return false;
+        // Modale tactile : destinations en boutons et embarquement groupé.
+        // Le déplacement se fait à la validation ; on rend la main tout de
+        // suite (le pion reste posé sur le point en attendant).
+        if (typeof TransitionDialog !== 'undefined') {
+            TransitionDialog.open(token, transition, endpoint, destinations);
+            return false;
+        }
+        // Repli confirm()/prompt() : environnements sans la modale (tests
+        // unitaires hors DOM, échec de chargement du script).
         // 7.9 : le menu joueur reflète le sens autorisé depuis cet endpoint.
         const exit = transition.type === 'stairs'
             ? Store.stairsExitDirection(transition, endpoint) : null;
@@ -210,6 +241,7 @@ const Exploration = (() => {
 
     return {
         discoverFromToken, observeTokenMove, transitionAtToken, destinationsFor,
-        moveThroughTransition, offerTransition, handleTokenRelease, elevatorDoorTouchesRoom
+        moveThroughTransition, moveGroupThroughTransition, destinationLabel,
+        offerTransition, handleTokenRelease, elevatorDoorTouchesRoom
     };
 })();
