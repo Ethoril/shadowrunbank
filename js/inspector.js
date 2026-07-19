@@ -215,19 +215,27 @@ const Inspector = (() => {
         body.appendChild(field('Statut opérationnel :', stateSelect));
 
         // Liaison réseau : uniquement pour les appareils (pas les nœuds eux-mêmes)
+        // Un nœud peut desservir des dispositifs sur n'importe quel étage de
+        // l'immeuble, donc la liste couvre tout le plan, groupée par étage.
         if (def.networkable) {
             const netSelect = document.createElement('select');
             const none = document.createElement('option');
             none.value = ''; none.textContent = '[Aucun - Autonome]';
             netSelect.appendChild(none);
-            Store.floorEntities(ent.floorId)
-                .filter(e => e.type === 'network_node')
-                .forEach(n => {
+            const floorsByOrder = Store.getPlan().floors.slice().sort((a, b) => a.order - b.order);
+            floorsByOrder.forEach(floor => {
+                const nodes = Store.floorEntities(floor.id).filter(e => e.type === 'network_node');
+                if (!nodes.length) return;
+                const group = document.createElement('optgroup');
+                group.label = floor.name;
+                nodes.forEach(n => {
                     const opt = document.createElement('option');
                     opt.value = n.id; opt.textContent = n.name;
                     if (ent.networkId === n.id) opt.selected = true;
-                    netSelect.appendChild(opt);
+                    group.appendChild(opt);
                 });
+                netSelect.appendChild(group);
+            });
             netSelect.addEventListener('change', () => {
                 ent.networkId = netSelect.value;
                 Store.touch();
