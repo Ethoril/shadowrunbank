@@ -301,6 +301,68 @@ const Editor = (() => {
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerup', onPointerUp);
         window.addEventListener('pointercancel', onPointerUp);
+        wireZoomAndPan();
+    }
+
+    /* --- Zoom (molette, boutons) et pan (clic-milieu) sur la carte --- */
+    let panSession = null;
+
+    function updateZoomControls() {
+        const level = document.getElementById('zoom-level');
+        if (level) level.textContent = Math.round(MapView.getZoom() * 100) + '%';
+        const range = MapView.getZoomRange();
+        const zoomInBtn = document.getElementById('zoom-in');
+        const zoomOutBtn = document.getElementById('zoom-out');
+        if (zoomInBtn) zoomInBtn.disabled = MapView.getZoom() >= range.max;
+        if (zoomOutBtn) zoomOutBtn.disabled = MapView.getZoom() <= range.min;
+    }
+
+    function wireZoomAndPan() {
+        const wrapper = document.getElementById('map-wrapper');
+        if (!wrapper) return;
+
+        wrapper.addEventListener('wheel', e => {
+            e.preventDefault();
+            // ~×1.16 par cran de molette, progressif au trackpad
+            MapView.zoomBy(Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
+            updateZoomControls();
+        }, { passive: false });
+
+        // Pan au clic-milieu — capture + stopPropagation pour que les outils
+        // du plateau (peinture, sélection…) ne voient jamais ce pointeur.
+        wrapper.addEventListener('pointerdown', e => {
+            if (e.button !== 1) return;
+            e.preventDefault();
+            e.stopPropagation();
+            panSession = { pointerId: e.pointerId, x: e.clientX, y: e.clientY };
+            wrapper.setPointerCapture(e.pointerId);
+            wrapper.classList.add('panning');
+        }, true);
+        wrapper.addEventListener('pointermove', e => {
+            if (!panSession || e.pointerId !== panSession.pointerId) return;
+            wrapper.scrollLeft -= e.clientX - panSession.x;
+            wrapper.scrollTop -= e.clientY - panSession.y;
+            panSession.x = e.clientX;
+            panSession.y = e.clientY;
+        });
+        const endPan = e => {
+            if (!panSession || e.pointerId !== panSession.pointerId) return;
+            panSession = null;
+            wrapper.classList.remove('panning');
+        };
+        wrapper.addEventListener('pointerup', endPan);
+        wrapper.addEventListener('pointercancel', endPan);
+
+        const zoomActions = {
+            'zoom-in': () => MapView.zoomBy(1.25),
+            'zoom-out': () => MapView.zoomBy(1 / 1.25),
+            'zoom-reset': () => MapView.resetZoom()
+        };
+        Object.entries(zoomActions).forEach(([id, action]) => {
+            const btn = document.getElementById(id);
+            if (btn) btn.addEventListener('click', () => { action(); updateZoomControls(); });
+        });
+        updateZoomControls();
     }
 
     function snapCoord(v) {

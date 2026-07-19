@@ -385,7 +385,7 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
 }
 
 /* Centre : Zone de Carte */
-.center-zone { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.center-zone { display: flex; flex-direction: column; gap: 10px; min-height: 0; position: relative; }
 
 .tabs { display: flex; gap: 10px; flex-wrap: wrap; }
 .tab-btn {
@@ -409,8 +409,51 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     flex: 1;
     border: 2px solid var(--primary);
     background: rgba(0, 0, 0, 0.4);
-    overflow: hidden;
+    overflow: auto; /* zoomé, le plateau déborde et devient scrollable */
     min-height: 0;
+}
+.map-wrapper.panning { cursor: grabbing; }
+.map-wrapper::-webkit-scrollbar { width: 10px; height: 10px; }
+.map-wrapper::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.5); }
+.map-wrapper::-webkit-scrollbar-thumb {
+    background: rgba(0, 210, 255, 0.35);
+    border: 2px solid rgba(0, 0, 0, 0.5);
+}
+.map-wrapper::-webkit-scrollbar-thumb:hover { background: rgba(0, 210, 255, 0.6); }
+.map-wrapper::-webkit-scrollbar-corner { background: rgba(0, 0, 0, 0.5); }
+
+/* --- Contrôles de zoom, ancrés au coin de la carte (hors zone scrollable) --- */
+.zoom-controls {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    background: rgba(3, 7, 13, 0.85);
+    border: 1px solid var(--primary);
+}
+.zoom-controls button {
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid var(--primary);
+    color: var(--primary);
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+}
+.zoom-controls button:hover:not(:disabled) { background: var(--primary); color: var(--bg-dark); }
+.zoom-controls button:disabled { opacity: 0.35; cursor: default; }
+#zoom-level {
+    min-width: 44px;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-muted);
 }
 
 /* Plateau : grille logique mise à l'échelle, centré dans le wrapper */
