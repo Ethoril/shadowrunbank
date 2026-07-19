@@ -853,6 +853,33 @@ test('une porte dans un mur est révélée depuis les DEUX salles qu’elle sép
         'et toujours révélée depuis la salle B qui contient son corps');
 });
 
+test('une étagère contre un mur n’est pas révélée depuis la pièce voisine', () => {
+    const { Store, Exploration } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[1];
+    const roomA = Store.addRoom(floor.id);
+    Store.paintCell(roomA, 5, 7);
+    const roomB = Store.addRoom(floor.id);
+    Store.paintCell(roomB, 6, 7);
+    // Étagère (mobilier fin, 2 × 0,6) plaquée contre le mur vertical x=6,
+    // côté salle B : tournée le long du mur, son corps tient dans la case
+    // (6,7). Contrairement à une porte, elle vit DANS la salle B et ne doit
+    // pas être visible depuis la salle A de l'autre côté du mur.
+    const shelf = Store.addDecor('shelf', floor.id, 6.3, 7.5);
+    shelf.rotation = 90;
+
+    const tokenA = Store.addToken(floor.id, 5, 7);
+    Exploration.discoverFromToken(tokenA);
+    assert.equal(Store.isDiscovered('decor', shelf.id), false,
+        'invisible depuis la salle A, séparée par le mur');
+
+    Store.resetDiscoveries();
+    const tokenB = Store.addToken(floor.id, 6, 7);
+    Exploration.discoverFromToken(tokenB);
+    assert.equal(Store.isDiscovered('decor', shelf.id), true,
+        'révélée depuis sa propre salle B');
+});
+
 test('un décor lié à un contrôle d’accès reflète son état effectif', () => {
     const { Store } = loadApplicationCore();
     Store.load();
