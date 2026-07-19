@@ -163,6 +163,14 @@ const Exploration = (() => {
         return true;
     }
 
+    // Dans un ascenseur, les boutons sont visibles : on connaît donc le nom des
+    // étages reliés même s'ils n'ont pas encore été explorés. Pour les autres
+    // transitions, un étage non révélé reste « Destination inconnue ».
+    function destinationLabel(transition, floor) {
+        if (transition.type === 'elevator' && floor) return floor.name;
+        return Store.isEffectivelyRevealed(floor, 'floor') ? floor.name : 'Destination inconnue';
+    }
+
     function offerTransition(token) {
         const found = transitionAtToken(token);
         if (!found) return false;
@@ -178,14 +186,13 @@ const Exploration = (() => {
         if (destinations.length === 1) {
             const floor = Store.findFloor(destination.floorId);
             if (!confirm('Utiliser « ' + transition.name + ' »' + arrow + ' vers '
-                + (Store.isEffectivelyRevealed(floor, 'floor') ? floor.name : 'Destination inconnue') + ' ?')) {
+                + destinationLabel(transition, floor) + ' ?')) {
                 return false;
             }
         } else {
             const choices = destinations.map((item, index) => {
                 const floor = Store.findFloor(item.floorId);
-                const label = Store.isEffectivelyRevealed(floor, 'floor') ? floor.name : 'Destination inconnue';
-                return (index + 1) + '. ' + label;
+                return (index + 1) + '. ' + destinationLabel(transition, floor);
             }).join('\n');
             const answer = prompt('Choisir une destination :\n' + choices, '1');
             const index = Number(answer) - 1;
