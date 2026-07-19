@@ -698,7 +698,7 @@ test('entrer dans une salle révèle les catégories évidentes et garde les aut
         'un ascenseur éloigné reste caché');
 });
 
-test('une porte à cheval sur un mur est révélée dès qu’une partie de son empreinte touche la salle', () => {
+test('une porte dans un mur est révélée depuis les DEUX salles qu’elle sépare', () => {
     const { Store, Exploration } = loadApplicationCore();
     Store.load();
     const floor = Store.sortedFloors()[1];
@@ -706,14 +706,24 @@ test('une porte à cheval sur un mur est révélée dès qu’une partie de son 
     Store.paintCell(roomA, 5, 7);
     const roomB = Store.addRoom(floor.id);
     Store.paintCell(roomB, 6, 7);
-    // Porte 1×0,35 centrée sur la frontière : son centre tombe dans la salle
-    // B, mais la moitié de son rectangle déborde bien dans la salle A.
-    const door = Store.addDecor('opaque_door', floor.id, 6, 7.5);
+    // Salles côte à côte, mur vertical à x=6. Porte tournée le long du mur
+    // (rotation 90°) et calée dans la salle B : son corps de 0,35 tient tout
+    // entier dans la case (6,7), son empreinte réelle ne touche jamais la
+    // salle A. Elle doit pourtant être révélée depuis A comme depuis B.
+    const door = Store.addDecor('opaque_door', floor.id, 6.5, 7.5);
+    door.rotation = 90;
     assert.equal(Store.roomAt(floor.id, 6, 7).id, roomB.id);
-    const token = Store.addToken(floor.id, 5, 7);
-    Exploration.discoverFromToken(token);
+
+    const tokenA = Store.addToken(floor.id, 5, 7);
+    Exploration.discoverFromToken(tokenA);
     assert.equal(Store.isDiscovered('decor', door.id), true,
-        'le PJ est dans la salle A, qui touche l’empreinte de la porte');
+        'la porte est révélée depuis la salle A, de l’autre côté du mur');
+
+    Store.resetDiscoveries();
+    const tokenB = Store.addToken(floor.id, 6, 7);
+    Exploration.discoverFromToken(tokenB);
+    assert.equal(Store.isDiscovered('decor', door.id), true,
+        'et toujours révélée depuis la salle B qui contient son corps');
 });
 
 test('un décor lié à un contrôle d’accès reflète son état effectif', () => {
