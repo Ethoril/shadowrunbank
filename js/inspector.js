@@ -711,7 +711,15 @@ const Inspector = (() => {
             token.color = value; badge.style.color = value; save();
         })));
         body.appendChild(field('Icône :', selectInput({
-            runner: 'Runner', decker: 'Decker', mage: 'Mage', rigger: 'Rigger', face: 'Face'
+            runner: 'Runner',
+            'street-samurai': 'Samouraï des rues',
+            rigger: 'Rigger',
+            decker: 'Decker',
+            technomancer: 'Technomancien',
+            'mystic-adept': 'Adepte mystique',
+            mage: 'Mage',
+            face: 'Face',
+            infiltrator: 'Infiltrateur'
         }, token.icon, value => { token.icon = value; save(); })));
 
         const floorOptions = {};
