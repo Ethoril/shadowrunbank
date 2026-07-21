@@ -18,6 +18,12 @@ const MapView = (() => {
     let walls = [];   // segments de murs de l'étage courant (coordonnées grille)
     const occluderCache = new Map();
     let occluderBuilds = 0;
+    // La géométrie occultante (murs, décors/entités bloquant la vue, cabines)
+    // ne change qu'à l'édition, jamais pendant l'animation des rondes/balayages.
+    // On invalide donc explicitement via un compteur d'époque au lieu de
+    // recalculer une signature JSON de tout l'étage à chaque appel (coûteux à
+    // 30 fps sur tablette, une fois par entité à couverture).
+    let occluderEpoch = 0;
     let lastCameraFeedSignature = '';
     const ROOM_OCCLUSION_CHANNELS = new Set(['optical', 'infrared', 'laser']);
     // La gaine d'ascenseur générée occulte comme un décor opaque (7.8),
@@ -289,28 +295,19 @@ const MapView = (() => {
         return false;
     }
 
-    function occluderSignature(floorId, channel) {
-        const rooms = ROOM_OCCLUSION_CHANNELS.has(channel)
-            ? Store.floorRooms(floorId).map(room => [room.id, room.cells]) : [];
-        const decors = Store.floorDecors(floorId)
-            .filter(decor => !Store.isAccessOpen(decor) && decor.blocksVision.includes(channel))
-            .map(decor => [decor.id, decor.x, decor.y, decor.width, decor.height, decor.rotation]);
-        const entities = Store.floorEntities(floorId)
-            .filter(ent => Store.getEffectiveState(ent) !== 'offline'
-                && EntityCatalog.get(ent.type).blocksVision.includes(channel))
-            .map(ent => [ent.id, ent.x, ent.y, ent.state]);
-        const cabins = CABIN_OCCLUSION_CHANNELS.has(channel)
-            ? Store.elevatorCabinsOnFloor(floorId).map(cabin =>
-                [cabin.transition.id, cabin.x, cabin.y, cabin.width, cabin.height, cabin.rotation])
-            : [];
-        return JSON.stringify([rooms, decors, entities, cabins]);
+    // Jeton de validité = mutations du plan (Store) + époque locale (glisser
+    // d'occulteur sans mutation immédiate). Comparaison entière/chaîne bon marché,
+    // au lieu d'une signature JSON de tout l'étage à chaque appel.
+    function occluderToken() {
+        const seq = typeof Store.getMutationSeq === 'function' ? Store.getMutationSeq() : 0;
+        return seq + '#' + occluderEpoch;
     }
 
     function computeOccluders(floorId, channel) {
         const key = floorId + ':' + channel;
-        const signature = occluderSignature(floorId, channel);
+        const token = occluderToken();
         const cached = occluderCache.get(key);
-        if (cached && cached.signature === signature) return cached.segments;
+        if (cached && cached.token === token) return cached.segments;
 
         const segments = ROOM_OCCLUSION_CHANNELS.has(channel) ? computeWalls(floorId) : [];
         Store.floorDecors(floorId).forEach(decor => {
@@ -332,12 +329,14 @@ const MapView = (() => {
         }
 
         occluderBuilds += 1;
-        occluderCache.set(key, { signature, segments });
+        occluderCache.set(key, { token, segments });
         return segments;
     }
 
+    // Marque la géométrie occultante comme périmée : les prochains appels à
+    // computeOccluders reconstruiront (une fois par canal) puis re-cacheront.
     function invalidateOccluders() {
-        occluderCache.clear();
+        occluderEpoch += 1;
     }
 
     /* Vue live fournie par les caméras piratées. Rien n'est écrit dans les
@@ -724,11 +723,46 @@ const MapView = (() => {
     }
 
     /* --- Overlay SVG : couvertures (fond), rondes, câbles (dessus) --- */
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+
+    /* Réconcilie les enfants d'un groupe SVG à partir d'une liste de descripteurs,
+       en RÉUTILISANT les nœuds existants (simple mise à jour d'attributs) au lieu
+       de tout détruire puis recréer à chaque frame. Divise nettement le churn
+       DOM/GC pendant l'animation (cônes qui balaient, câbles qui suivent).
+       spec = { key, tag, attrs:{name:value|null}, data:{clé:valeur} }.
+       L'ordre de peinture n'étant pas significatif pour ces overlays translucides,
+       on ne le réimpose pas ; les nœuds dont la clé disparaît sont retirés. */
+    function reconcileSvgGroup(group, specs) {
+        const existing = new Map();
+        Array.from(group.children).forEach(child => {
+            const key = child.getAttribute('data-key');
+            if (key === null) { child.remove(); return; }
+            existing.set(key, child);
+        });
+        const seen = new Set();
+        specs.forEach(spec => {
+            seen.add(spec.key);
+            let el = existing.get(spec.key);
+            if (!el || el.tagName !== spec.tag) {
+                if (el) el.remove();
+                el = document.createElementNS(SVG_NS, spec.tag);
+                el.setAttribute('data-key', spec.key);
+                group.appendChild(el);
+            }
+            Object.entries(spec.attrs).forEach(([name, value]) => {
+                if (value === null || value === undefined) el.removeAttribute(name);
+                else el.setAttribute(name, value);
+            });
+            if (spec.data) Object.entries(spec.data).forEach(([k, v]) => { el.dataset[k] = v; });
+        });
+        existing.forEach((el, key) => { if (!seen.has(key)) el.remove(); });
+    }
+
     function renderOverlay() {
         const svg = document.getElementById('overlay-svg');
         svg.innerHTML = '';
         ['g-coverages', 'g-coverage-handles', 'g-patrols', 'g-cables'].forEach(id => {
-            const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            const g = document.createElementNS(SVG_NS, 'g');
             g.id = id;
             svg.appendChild(g);
         });
@@ -742,11 +776,14 @@ const MapView = (() => {
     function renderCoverages(now) {
         const g = svgGroup('g-coverages');
         if (!g) return;
-        g.innerHTML = '';
-        if (!Store.getOverlayPreferences().coverages) return;
         const floor = Store.currentFloor();
-        if (!floor) return;
+        if (!Store.getOverlayPreferences().coverages || !floor) {
+            reconcileSvgGroup(g, []);
+            renderCoverageHandles(now);
+            return;
+        }
 
+        const specs = [];
         Store.visibleEntities(floor.id).forEach(ent => {
             if (!ent.coverage) return;
             // La couverture conserve son réglage MJ indépendant, mais un cône
@@ -766,12 +803,21 @@ const MapView = (() => {
             const coverage = ent.coverage;
             const dir = Anim.coverageDirection(ent, now);
             const occluders = computeOccluders(floor.id, coverage.channel);
-            let shape;
+            const attrs = {
+                fill: color,
+                'fill-opacity': hidden ? '0.05' : effState === 'hacked' ? '0.14' : '0.10',
+                stroke: color,
+                'stroke-opacity': hidden ? '0.25' : '0.45',
+                'stroke-width': coverage.shape === 'beam' ? '1.5' : '1',
+                // toujours défini (jamais retiré) pour un nœud réutilisé d'une frame à l'autre
+                'stroke-dasharray': hidden ? '4 4' : 'none'
+            };
+            let tag;
             if (coverage.shape === 'circle' && occluders.length === 0) {
-                shape = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                shape.setAttribute('cx', pos.x * cellPx);
-                shape.setAttribute('cy', pos.y * cellPx);
-                shape.setAttribute('r', coverage.radius * cellPx);
+                tag = 'circle';
+                attrs.cx = pos.x * cellPx;
+                attrs.cy = pos.y * cellPx;
+                attrs.r = coverage.radius * cellPx;
             } else {
                 let points;
                 if (coverage.shape === 'beam') {
@@ -785,22 +831,17 @@ const MapView = (() => {
                 } else {
                     points = conePolygon(pos.x, pos.y, dir, coverage.angle, coverage.range, occluders);
                 }
-                shape = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-                shape.setAttribute('points', points.map(point =>
-                    (point[0] * cellPx) + ',' + (point[1] * cellPx)).join(' '));
+                tag = 'polygon';
+                attrs.points = points.map(point =>
+                    (point[0] * cellPx) + ',' + (point[1] * cellPx)).join(' ');
             }
-            shape.dataset.entityId = ent.id;
-            shape.dataset.shape = coverage.shape;
-            shape.dataset.channel = coverage.channel;
-            shape.setAttribute('fill', color);
-            shape.setAttribute('fill-opacity', hidden ? '0.05' : effState === 'hacked' ? '0.14' : '0.10');
-            shape.setAttribute('stroke', color);
-            shape.setAttribute('stroke-opacity', hidden ? '0.25' : '0.45');
-            shape.setAttribute('stroke-width', coverage.shape === 'beam' ? '1.5' : '1');
-            if (hidden) shape.setAttribute('stroke-dasharray', '4 4');
-            g.appendChild(shape);
+            specs.push({
+                key: ent.id, tag, attrs,
+                data: { entityId: ent.id, shape: coverage.shape, channel: coverage.channel }
+            });
         });
 
+        reconcileSvgGroup(g, specs);
         renderCoverageHandles(now);
     }
 
@@ -961,15 +1002,17 @@ const MapView = (() => {
     function renderCables(now) {
         const g = svgGroup('g-cables');
         if (!g) return;
-        g.innerHTML = '';
-        if (!Store.getOverlayPreferences().networkLinks) return;
         const floor = Store.currentFloor();
-        if (!floor) return;
+        if (!Store.getOverlayPreferences().networkLinks || !floor) {
+            reconcileSvgGroup(g, []);
+            return;
+        }
         if (now === undefined) now = Date.now();
         // Vue joueur : un câble n'apparaît que si ses DEUX extrémités sont
         // révélées — garanti par la recherche du nœud dans la liste filtrée.
         const ents = Store.visibleEntities(floor.id);
 
+        const specs = [];
         ents.forEach(ent => {
             if (ent.type === 'network_node' || !ent.networkId) return;
             const node = ents.find(n => n.id === ent.networkId);
@@ -977,24 +1020,18 @@ const MapView = (() => {
 
             const a = Anim.effectivePos(ent, now);
             const b = Anim.effectivePos(node, now);
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('class', 'network-cable');
-            line.setAttribute('x1', a.x * cellPx);
-            line.setAttribute('y1', a.y * cellPx);
-            line.setAttribute('x2', b.x * cellPx);
-            line.setAttribute('y2', b.y * cellPx);
-
             const effectiveState = Store.getEffectiveState(node);
-            if (effectiveState === 'active') {
-                line.setAttribute('stroke', 'rgba(74, 246, 38, 0.4)');
-            } else if (effectiveState === 'hacked') {
-                line.setAttribute('stroke', 'rgba(255, 179, 0, 0.6)');
-            } else {
-                line.setAttribute('stroke', 'rgba(82, 120, 116, 0.2)');
-            }
-            line.setAttribute('stroke-width', '1.5');
-            g.appendChild(line);
+            const stroke = effectiveState === 'active' ? 'rgba(74, 246, 38, 0.4)'
+                : effectiveState === 'hacked' ? 'rgba(255, 179, 0, 0.6)'
+                : 'rgba(82, 120, 116, 0.2)';
+            specs.push({ key: ent.id, tag: 'line', attrs: {
+                class: 'network-cable',
+                x1: a.x * cellPx, y1: a.y * cellPx, x2: b.x * cellPx, y2: b.y * cellPx,
+                stroke, 'stroke-width': '1.5'
+            } });
         });
+
+        reconcileSvgGroup(g, specs);
     }
 
     /* Position écran directe (drag / animation), sans reconstruire la couche */
@@ -1014,6 +1051,9 @@ const MapView = (() => {
             div.style.top = (y * cellPx) + 'px';
             div.classList.add('dragging');
         }
+        // Glisser une entité occultante (barrière de mana) déplace un occulteur
+        // sans passer par render() : on force la reconstruction pour ce cadre.
+        invalidateOccluders();
         renderCables();
         renderCoverages(Date.now());
     }
@@ -1025,6 +1065,8 @@ const MapView = (() => {
             div.style.top = (y * cellPx) + 'px';
             div.classList.add('dragging');
         }
+        // Idem : un décor opaque déplacé doit re-découper les cônes en direct.
+        invalidateOccluders();
         renderCoverages(Date.now());
     }
 
@@ -1075,6 +1117,9 @@ const MapView = (() => {
     }
 
     function render() {
+        // Un rendu complet suit toute mutation (édition, changement d'état,
+        // sync distante) : c'est le point sûr pour périmer les occulteurs.
+        invalidateOccluders();
         layoutBoard();
         const now = Date.now();
         const floor = Store.currentFloor();
@@ -1097,6 +1142,8 @@ const MapView = (() => {
             + (tool.startsWith('transition:') ? ' tool-transition' : '')
             + (EntityCatalog.types[tool] ? ' tool-place' : '')
             + (tool.startsWith('decor:') ? ' tool-decor' : '');
+        // Resynchronise la boucle d'animation avec l'étage/les états rendus.
+        if (typeof Anim !== 'undefined' && typeof Anim.refresh === 'function') Anim.refresh();
     }
 
     /* Appelé par la boucle d'animation : ne reconstruit les couches que

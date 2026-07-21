@@ -63,7 +63,7 @@ h1 { margin: 0; min-width: 0; font-size: 1.5rem; text-transform: uppercase; lett
 /* --- Auth (phase 3) --- */
 #auth-user { color: var(--text-muted); font-size: 0.8rem; }
 
-#auth-btn, #preview-btn, #export-btn, #import-btn, #retry-cloud-btn,
+#auth-btn, #preview-btn, #export-btn, #import-btn, #retry-cloud-btn, #fullscreen-btn,
 #undo-btn, #redo-btn, #snapshot-btn, #tools-toggle, #inspector-toggle,
 #tools-close, #inspector-close {
     background: transparent;
@@ -77,6 +77,7 @@ h1 { margin: 0; min-width: 0; font-size: 1.5rem; text-transform: uppercase; lett
 }
 
 #auth-btn:hover, #preview-btn:hover, #export-btn:hover, #import-btn:hover, #retry-cloud-btn:hover,
+#fullscreen-btn:hover,
 #undo-btn:hover:not(:disabled), #redo-btn:hover:not(:disabled), #snapshot-btn:hover:not(:disabled),
 #tools-toggle:hover, #inspector-toggle:hover, #tools-close:hover, #inspector-close:hover {
     background: rgba(0, 210, 255, 0.15);
@@ -411,6 +412,10 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     background: rgba(0, 0, 0, 0.4);
     overflow: auto; /* zoomé, le plateau déborde et devient scrollable */
     min-height: 0;
+    /* Tactile : le pan à un doigt reste natif, mais le pincement du navigateur
+       (qui zoomait toute la page) est désactivé — on le gère nous-mêmes pour
+       ne zoomer que la carte (voir wireZoomAndPan). */
+    touch-action: pan-x pan-y;
 }
 .map-wrapper.panning { cursor: grabbing; }
 .map-wrapper::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -1070,7 +1075,8 @@ hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin:
     body.player-mode #auth-user { display: none !important; }
     body.player-mode .header-right { width: auto; margin-left: auto; gap: 6px; }
     body.player-mode #auth-btn,
-    body.player-mode #preview-btn { min-height: 44px; padding: 7px 10px; }
+    body.player-mode #preview-btn,
+    body.player-mode #fullscreen-btn { min-height: 44px; padding: 7px 10px; }
     body.player-mode .app-container {
         position: relative;
         grid-template-columns: minmax(0, 1fr);
@@ -1119,7 +1125,10 @@ hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin:
         position: fixed;
         z-index: 300;
         right: max(18px, env(safe-area-inset-right));
-        bottom: max(18px, env(safe-area-inset-bottom));
+        /* Empilé au-dessus des contrôles de zoom (même coin bas-droit) pour ne
+           pas les recouvrir. L'offset reprend la base du padding bas du body
+           (comme .zoom-controls) + la hauteur du bloc zoom tactile. */
+        bottom: calc(max(var(--page-pad), env(safe-area-inset-bottom)) + 76px);
         min-width: 92px;
         min-height: 44px;
         padding: 8px 12px;

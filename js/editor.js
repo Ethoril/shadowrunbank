@@ -310,8 +310,22 @@ const Editor = (() => {
         wireZoomAndPan();
     }
 
-    /* --- Zoom (molette, boutons) et pan (clic-milieu) sur la carte --- */
+    /* --- Zoom (molette, boutons, pincement) et pan (clic-milieu) sur la carte --- */
     let panSession = null;
+
+    /* Un pincement à deux doigts ne doit ni peindre, ni sélectionner, ni
+       déplacer un élément : on annule proprement le geste plateau en cours. */
+    function cancelBoardGesture() {
+        if (paintSession) {
+            paintSession = null;
+            Store.cancelTransaction();
+        }
+        if (dragSession) {
+            if (dragSession.kind !== 'token') Store.cancelTransaction();
+            dragSession = null;
+            MapView.render();
+        }
+    }
 
     function updateZoomControls() {
         const level = document.getElementById('zoom-level');
@@ -358,6 +372,64 @@ const Editor = (() => {
         };
         wrapper.addEventListener('pointerup', endPan);
         wrapper.addEventListener('pointercancel', endPan);
+
+        // --- Pincement tactile : zoome uniquement la carte, autour du milieu des
+        //     deux doigts. Le zoom de page du navigateur est neutralisé via
+        //     touch-action (CSS). On écoute en phase de capture au niveau window
+        //     pour voir les deux doigts même quand un jeton stoppe la propagation
+        //     de son pointerdown. Le rendu est calé sur requestAnimationFrame
+        //     pour ne pas relancer render() à chaque micro-mouvement.
+        const pinchPointers = new Map();
+        let pinchDist = 0, pinchScale = 1, pinchAnchor = null, pinchRaf = null;
+        const canRaf = typeof requestAnimationFrame === 'function';
+
+        const pointsDistance = () => {
+            const p = [...pinchPointers.values()];
+            return Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+        };
+        const pointsMid = () => {
+            const p = [...pinchPointers.values()];
+            return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 };
+        };
+        const applyPinch = () => {
+            pinchRaf = null;
+            const scale = pinchScale;
+            pinchScale = 1;
+            if (pinchAnchor && Math.abs(scale - 1) > 1e-3) {
+                MapView.zoomBy(scale, pinchAnchor.x, pinchAnchor.y);
+                updateZoomControls();
+            }
+        };
+
+        window.addEventListener('pointerdown', e => {
+            if (e.pointerType !== 'touch' || !wrapper.contains(e.target)) return;
+            pinchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (pinchPointers.size === 2) {
+                pinchDist = pointsDistance();
+                pinchScale = 1;
+                cancelBoardGesture();
+            }
+        }, true);
+        window.addEventListener('pointermove', e => {
+            if (!pinchPointers.has(e.pointerId)) return;
+            pinchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (pinchPointers.size < 2) return;
+            const dist = pointsDistance();
+            if (pinchDist > 0 && dist > 0) {
+                pinchScale *= dist / pinchDist;
+                pinchAnchor = pointsMid();
+                if (canRaf) { if (!pinchRaf) pinchRaf = requestAnimationFrame(applyPinch); }
+                else applyPinch();
+            }
+            pinchDist = dist;
+        }, true);
+        const dropPinchPointer = e => {
+            if (!pinchPointers.has(e.pointerId)) return;
+            pinchPointers.delete(e.pointerId);
+            if (pinchPointers.size < 2) pinchDist = 0;
+        };
+        window.addEventListener('pointerup', dropPinchPointer, true);
+        window.addEventListener('pointercancel', dropPinchPointer, true);
 
         const zoomActions = {
             'zoom-in': () => MapView.zoomBy(1.25),
@@ -696,6 +768,12 @@ const Editor = (() => {
                 Store.endTransaction();
             }
             dragSession = null;
+            // Vue joueur : saisir un pion pour le déplacer ne doit pas ouvrir
+            // son encart d'info (voir Inspector.render, garde `dragging`). Un
+            // simple tap (sans déplacement) reste une consultation → on ouvre.
+            if (Store.isPlayerView() && completed.kind === 'token' && !completed.moved) {
+                Inspector.render({ forceOpen: true });
+            }
         }
     }
 
@@ -907,5 +985,6 @@ const Editor = (() => {
              onEntityPointerDown, onDecorPointerDown, onTokenPointerDown, onTransitionPointerDown,
              onWaypointPointerDown, onCoverageHandlePointerDown,
              duplicateSelection, copySelection, pasteClipboard, applyHistory,
-             setTicker, startPatrolEdit, endPatrolEdit, startTransitionEndpoint };
+             setTicker, startPatrolEdit, endPatrolEdit, startTransitionEndpoint,
+             isPointerDragging: () => !!dragSession };
 })();

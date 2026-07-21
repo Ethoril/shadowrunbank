@@ -632,6 +632,33 @@ const App = (() => {
         });
     }
 
+    function wireFullscreen() {
+        const btn = document.getElementById('fullscreen-btn');
+        if (!btn) return;
+        const root = document.documentElement;
+        const supported = !!(root.requestFullscreen || root.webkitRequestFullscreen);
+        if (!supported) { btn.style.display = 'none'; return; }
+
+        const isFullscreen = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+        const enter = () => (root.requestFullscreen || root.webkitRequestFullscreen).call(root);
+        const exit = () => (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+
+        const sync = () => {
+            const on = isFullscreen();
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            btn.textContent = on ? '⛶ Fenêtré' : '⛶ Plein écran';
+            btn.title = on ? 'Quitter le plein écran' : 'Passer en plein écran';
+        };
+        btn.addEventListener('click', () => {
+            const action = isFullscreen() ? exit() : enter();
+            // Certains navigateurs rejettent la promesse hors geste utilisateur.
+            if (action && typeof action.catch === 'function') action.catch(() => {});
+        });
+        document.addEventListener('fullscreenchange', sync);
+        document.addEventListener('webkitfullscreenchange', sync);
+        sync();
+    }
+
     function boot() {
         Store.load();
         Store.setSaveStatus('saved', '💾 Plan local chargé');
@@ -647,6 +674,7 @@ const App = (() => {
         wireHistoryControls();
         wireInspectorDrawer();
         wireOverlayControls();
+        wireFullscreen();
 
         const previewBtn = document.getElementById('preview-btn');
         if (previewBtn) previewBtn.addEventListener('click', togglePreview);

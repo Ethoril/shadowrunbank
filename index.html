@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shadowrun Bank Planner :: Overlord_View</title>
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=21">
+    <link rel="stylesheet" href="css/style.css?v=23">
 </head>
 <body>
 
@@ -27,6 +27,7 @@
             <button id="import-btn">⇧ Import JSON</button>
             <input id="import-file" type="file" accept="application/json,.json" hidden>
             <button id="retry-cloud-btn" hidden>↻ Reconnecter</button>
+            <button id="fullscreen-btn" title="Passer en plein écran" aria-pressed="false">⛶ Plein écran</button>
             <button id="preview-btn" style="display:none;">👁 Vue joueurs</button>
             <span id="auth-user"></span>
             <button id="auth-btn" style="display:none;">🔑 Admin</button>
@@ -141,15 +142,15 @@
     <button id="panel-backdrop" type="button" aria-label="Fermer le panneau ouvert"></button>
 
     <script src="js/catalog.js?v=21"></script>
-    <script src="js/store.js?v=24"></script>
-    <script src="js/anim.js?v=20"></script>
-    <script src="js/map.js?v=23"></script>
+    <script src="js/store.js?v=25"></script>
+    <script src="js/anim.js?v=21"></script>
+    <script src="js/map.js?v=25"></script>
     <script src="js/exploration.js?v=24"></script>
     <script src="js/transition-dialog.js?v=2"></script>
-    <script src="js/inspector.js?v=23"></script>
-    <script src="js/editor.js?v=22"></script>
+    <script src="js/inspector.js?v=24"></script>
+    <script src="js/editor.js?v=24"></script>
     <script src="js/visibility.js?v=22"></script>
-    <script src="js/main.js?v=21"></script>
+    <script src="js/main.js?v=22"></script>
     <!-- Firebase (phase 3) : module ES ; en cas d'échec de chargement
          (file://, hors-ligne), l'appli reste en mode localStorage. -->
     <script type="module" src="js/cloud.js?v=20"></script>

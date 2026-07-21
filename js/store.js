@@ -18,6 +18,10 @@ const Store = (() => {
     const BACKUP_LIMIT = 15;
 
     let plan = null;
+    // Compteur monotone incrémenté à chaque mutation du plan. Sert de jeton de
+    // cache bon marché (ex. occulteurs de map.js) : la géométrie ne change qu'ici,
+    // jamais pendant l'animation temporelle des rondes/balayages.
+    let mutationSeq = 0;
     let saveTimer = null;
     let cloudActive = false; // true dès que main.js a branché window.Cloud
     let dirty = false;
@@ -662,6 +666,7 @@ const Store = (() => {
     }
 
     function markPlanDirty() {
+        mutationSeq += 1;
         plan.updatedAt = Date.now();
         setDirty(true);
         setSaveStatus('dirty', '● Modifications locales');
@@ -2107,6 +2112,7 @@ const Store = (() => {
         createPatrol, clearPatrol, startPatrol, stopPatrol,
         setPatrolSpeed, setPatrolLoop, removePatrolPoint, movePatrolPoint, reversePatrol,
         createCoverage, clearCoverage, resetCoverage, setCoverageSweep,
-        createVision, clearVision, setSweep
+        createVision, clearVision, setSweep,
+        getMutationSeq: () => mutationSeq
     };
 })();
