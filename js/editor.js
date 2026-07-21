@@ -533,8 +533,26 @@ const Editor = (() => {
         if (Store.isPlayerView() && tool !== 'select') return;
 
         if (tool === 'select') {
-            // Sélection de pièce par hit-test sur la case cliquée
             const cell = MapView.cellFromEvent(e);
+            // Vue joueur (E3) : un pion mobile sélectionné capte le clic sur le
+            // plateau. Case atteignable → déplacement par portée ; hors zone →
+            // désélection. (Le clic sur un autre pion est intercepté par la
+            // couche des pions, qui stoppe la propagation.)
+            if (Store.isPlayerView()) {
+                const sel = Store.ui.selection;
+                const token = sel && sel.kind === 'token' ? Store.findToken(sel.id) : null;
+                if (token && token.playerMovable && !token.locked && token.floorId === floor.id) {
+                    if (cell && MapView.reachableCells(token).has(cell.col + ',' + cell.row)) {
+                        moveTokenToCell(token, cell);
+                    } else {
+                        Store.ui.selection = null;
+                        MapView.render();
+                        Inspector.render();
+                    }
+                    return;
+                }
+            }
+            // Sélection de pièce par hit-test sur la case cliquée
             let room = cell ? Store.roomAt(floor.id, cell.col, cell.row) : null;
             if (room && Store.isPlayerView() && !Store.isEffectivelyRevealed(room, 'room')) room = null;
             Store.ui.selection = room ? { kind: 'room', id: room.id } : null;
@@ -868,8 +886,11 @@ const Editor = (() => {
         const token = Store.findToken(tokenId);
         if (!token) return;
         Store.ui.selection = { kind: 'token', id: tokenId };
-        const playerCanMove = Store.ui.readOnly && !Store.ui.preview && token.playerMovable && !token.locked;
-        if (!Store.isPlayerView() || playerCanMove) {
+        // Vue MJ : drag libre conservé. Vue joueur (E3) : plus de déplacement
+        // « au doigt » — le clic ne fait que sélectionner ; la zone atteignable
+        // s'affiche et le déplacement se fait en cliquant une case de la zone
+        // (géré dans onBoardPointerDown).
+        if (!Store.isPlayerView()) {
             dragSession = { kind: 'token', id: tokenId, moved: false, downTime: Date.now() };
             capturePointer(e);
         }
@@ -877,8 +898,41 @@ const Editor = (() => {
         Inspector.render();
     }
 
+    /* Vue joueur : pose le pion au centre d'une case atteignable, valide la
+       position et déclenche les découvertes (comme un drop). */
+    function moveTokenToCell(token, cell) {
+        token.x = cell.col + 0.5;
+        token.y = cell.row + 0.5;
+        Store.commitTokenPosition(token);
+        const changedFloor = typeof Exploration !== 'undefined'
+            && Exploration.handleTokenRelease(token);
+        // changedFloor : App.renderAll déjà déclenché par la transition.
+        // Sinon : rendu complet pour révéler les découvertes et recalculer la
+        // zone à la nouvelle position (le pion reste sélectionné).
+        if (!changedFloor) MapView.render();
+    }
+
     function onTransitionPointerDown(e, transitionId, endpointId) {
         if (Store.ui.activeTool !== 'select') return;
+        // Vue joueur (E3) : l'icône du point de passage recouvre sa case. Si un
+        // pion mobile est sélectionné et que cette case est atteignable, taper
+        // le point y déplace le pion (la modale de transition s'ouvre ensuite
+        // via handleTokenRelease) plutôt que de sélectionner la transition.
+        if (Store.isPlayerView()) {
+            const sel = Store.ui.selection;
+            const token = sel && sel.kind === 'token' ? Store.findToken(sel.id) : null;
+            const transition = Store.findTransition(transitionId);
+            const endpoint = transition && endpointId
+                && transition.endpoints.find(ep => ep.id === endpointId);
+            if (token && token.playerMovable && !token.locked && endpoint
+                && endpoint.floorId === token.floorId) {
+                const cell = { col: Math.floor(endpoint.x), row: Math.floor(endpoint.y) };
+                if (MapView.reachableCells(token).has(cell.col + ',' + cell.row)) {
+                    moveTokenToCell(token, cell);
+                    return;
+                }
+            }
+        }
         Store.ui.selection = { kind: 'transition', id: transitionId };
         // Cabine fantôme sans endpoint sur cet étage : sélection seule.
         if (endpointId && !Store.isPlayerView()) {

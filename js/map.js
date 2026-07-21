@@ -30,6 +30,10 @@ const MapView = (() => {
     // recalculer une signature JSON de tout l'étage à chaque appel (coûteux à
     // 30 fps sur tablette, une fois par entité à couverture).
     let occluderEpoch = 0;
+    // Cartes d'obstacles de déplacement (E3), mémorisées par étage, invalidées
+    // au même jeton que les occulteurs (mutations du plan + époque locale).
+    const movementBlockerCache = new Map(); // floorId → { token, blockers }
+    const reachableCache = new Map();        // tokenId → { key, cells }
     let lastCameraFeedSignature = '';
     const ROOM_OCCLUSION_CHANNELS = new Set(['optical', 'infrared', 'laser']);
     // La gaine d'ascenseur générée occulte comme un décor opaque (7.8),
@@ -156,14 +160,19 @@ const MapView = (() => {
        couverture. Runs colinéaires fusionnés, dédoublonnés entre
        pièces adjacentes.
        ============================================================ */
-    function computeWalls(floorId) {
-        const horiz = new Map(); // ligne y → Set des colonnes c (run unitaire [c, c+1])
-        const vert = new Map();  // ligne x → Set des rangées r (run unitaire [r, r+1])
+    /* Arêtes unitaires du zonage AVANT fusion : pour chaque frontière de pièce
+       (room↔room ou room↔vide), une arête sur la ligne de grille correspondante.
+       `horiz` : ligne y → Set des colonnes c (arête [c, c+1] entre les cases
+       (c, y-1) et (c, y)). `vert` : ligne x → Set des rangées r (arête entre
+       (x-1, r) et (x, r)). Base commune de `computeWalls` (occlusion) et de
+       `computeBlockedEdges` (déplacement E3). */
+    function computeWallEdges(floorId) {
+        const horiz = new Map();
+        const vert = new Map();
         const addRun = (map, line, pos) => {
             if (!map.has(line)) map.set(line, new Set());
             map.get(line).add(pos);
         };
-
         Store.floorRooms(floorId).forEach(room => {
             const cellSet = new Set(room.cells);
             room.cells.forEach(key => {
@@ -174,7 +183,11 @@ const MapView = (() => {
                 if (!cellSet.has((c + 1) + ',' + r)) addRun(vert, c + 1, r);
             });
         });
+        return { horiz, vert };
+    }
 
+    function computeWalls(floorId) {
+        const { horiz, vert } = computeWallEdges(floorId);
         const segs = [];
         const merge = (map, horizontal) => {
             map.forEach((set, line) => {
@@ -195,6 +208,196 @@ const MapView = (() => {
         merge(horiz, true);
         merge(vert, false);
         return segs;
+    }
+
+    /* ============================================================
+       Obstacles de déplacement (E3) — modèle par ARÊTES de grille
+       (mur = frontière infranchissable) + CASES non-entrables
+       (obstacles massifs), consommé par `reachableCells`.
+
+       Convention de clé d'arête (une arête sépare deux cases
+       orthogonalement adjacentes) :
+       - `H:L:c` = arête horizontale sur la ligne y=L, colonne c →
+         bloque le pas entre (c, L-1) et (c, L) ;
+       - `V:L:r` = arête verticale sur la ligne x=L, rangée r →
+         bloque le pas entre (L-1, r) et (L, r).
+       Ces clés coïncident avec les runs unitaires de computeWallEdges.
+       ============================================================ */
+
+    /* Empreinte d'un décor après rotation : largeur/hauteur effectives en
+       cases (quart de tour = axes échangés), comme decorTouchesRoom. */
+    function decorFootprint(decor) {
+        const quarterTurn = Math.abs(Math.round(decor.rotation / 90)) % 2 === 1;
+        return {
+            w: quarterTurn ? decor.height : decor.width,
+            h: quarterTurn ? decor.width : decor.height
+        };
+    }
+
+    /* Rôle d'un décor vis-à-vis du déplacement (modèle du plan E3) :
+       - 'gate' : porte/ouverture — peut PERCER une arête de zonage si
+                  franchissable, ou la maintenir bloquée si verrouillée ;
+       - 'cell' : tout autre décor bloquant (vitre, grille, pilier, mobilier)
+                  → rend non-entrables les cases de son empreinte ;
+       - 'none' : n'entrave pas le déplacement.
+       Les MURS viennent uniquement du zonage des pièces (computeWallEdges) ;
+       un décor n'agit jamais sur les arêtes en dehors des portes. */
+    function decorMovementRole(decor) {
+        if (decor.type === 'opaque_door' || decor.type === 'opening') return 'gate';
+        return DecorCatalog.get(decor.type).blocksMovement ? 'cell' : 'none';
+    }
+
+    /* Une porte est franchissable si c'est une ouverture (toujours), une porte
+       simple sans contrôleur d'accès (ouvrable à la main) ou une porte dont le
+       contrôleur n'est pas actif (verrou ouvert/piraté). Une porte verrouillée
+       (maglock actif) laisse l'arête bloquée. */
+    function isDoorPassable(decor) {
+        if (decor.type === 'opening') return true;
+        return !decor.accessEntityId || Store.isAccessOpen(decor);
+    }
+
+    /* Arêtes de grille traversées par un décor fin/porte. L'axe le plus fin
+       donne l'orientation ; la ligne de grille = arrondi du centre sur cet
+       axe ; l'étendue sur l'axe long = colonnes/rangées couvertes. */
+    function decorStraddledEdges(decor) {
+        const { w, h } = decorFootprint(decor);
+        const keys = [];
+        if (h < w) { // barrière horizontale (fine en Y) → arêtes horizontales
+            const line = Math.round(decor.y);
+            const min = Math.floor(decor.x - w / 2);
+            const max = Math.ceil(decor.x + w / 2) - 1;
+            for (let c = min; c <= max; c++) keys.push('H:' + line + ':' + c);
+        } else {     // barrière verticale (fine en X) → arêtes verticales
+            const line = Math.round(decor.x);
+            const min = Math.floor(decor.y - h / 2);
+            const max = Math.ceil(decor.y + h / 2) - 1;
+            for (let r = min; r <= max; r++) keys.push('V:' + line + ':' + r);
+        }
+        return keys;
+    }
+
+    /* Cases dont le CENTRE tombe dans l'empreinte (obstacle massif). */
+    function footprintCells(cx, cy, w, h) {
+        const keys = [];
+        const minCol = Math.floor(cx - w / 2), maxCol = Math.ceil(cx + w / 2) - 1;
+        const minRow = Math.floor(cy - h / 2), maxRow = Math.ceil(cy + h / 2) - 1;
+        for (let c = minCol; c <= maxCol; c++) {
+            for (let r = minRow; r <= maxRow; r++) {
+                if (Math.abs((c + 0.5) - cx) <= w / 2 + 1e-9
+                    && Math.abs((r + 0.5) - cy) <= h / 2 + 1e-9) keys.push(c + ',' + r);
+            }
+        }
+        return keys;
+    }
+
+    /* Carte d'obstacles de l'étage : { edges:Set, cells:Set }. Zonage des
+       pièces = murs ; décors fins = arêtes ; portes franchissables = arêtes
+       percées ; obstacles massifs = cases. */
+    function computeBlockedEdges(floorId) {
+        const cached = movementBlockerCache.get(floorId);
+        const token = occluderToken();
+        if (cached && cached.token === token) return cached.blockers;
+
+        const edges = new Set();
+        const cells = new Set();
+        const { horiz, vert } = computeWallEdges(floorId);
+        horiz.forEach((set, line) => set.forEach(c => edges.add('H:' + line + ':' + c)));
+        vert.forEach((set, line) => set.forEach(r => edges.add('V:' + line + ':' + r)));
+
+        const pierced = [];
+        Store.floorDecors(floorId).forEach(decor => {
+            const role = decorMovementRole(decor);
+            if (role === 'none') return;
+            if (role === 'cell') {
+                const { w, h } = decorFootprint(decor);
+                footprintCells(decor.x, decor.y, w, h).forEach(k => cells.add(k));
+                return;
+            }
+            // role === 'gate' : la porte agit sur l'arête de zonage qu'elle
+            // chevauche — percée si franchissable, laissée bloquée sinon.
+            const straddled = decorStraddledEdges(decor);
+            if (isDoorPassable(decor)) pierced.push(...straddled);
+            else straddled.forEach(k => edges.add(k)); // porte verrouillée = mur
+        });
+        // Les percements sont appliqués en dernier : une porte franchissable
+        // ouvre l'arête même si une barrière la posait au même endroit.
+        pierced.forEach(k => edges.delete(k));
+
+        // Les cabines d'ascenseur ne sont PAS des cases bloquées : elles sont
+        // « boardables ». Le pion doit pouvoir atteindre le point de passage
+        // pour déclencher la modale de transition (déplacement inter-étages,
+        // hors périmètre de la zone mono-étage).
+
+        const blockers = { edges, cells };
+        movementBlockerCache.set(floorId, { token, blockers });
+        return blockers;
+    }
+
+    /* Coût octile : orthogonal = 1, diagonal ≈ 1,5. Dijkstra borné depuis la
+       case du pion, 8-connexité, respect des arêtes/cases bloquées et
+       anti-coupe d'angle (une diagonale exige ses deux arêtes orthogonales
+       ouvertes). Renvoie un Set de clés "c,r" (case de départ incluse). */
+    const DIAG_COST = 1.5;
+    function reachableCells(token) {
+        if (!token) return new Set();
+        const grid = Store.getPlan().grid;
+        const range = Number.isFinite(token.movementRange) ? token.movementRange : 6;
+        const startC = Math.floor(token.x), startR = Math.floor(token.y);
+        const cacheKey = token.floorId + '|' + startC + ',' + startR + '|' + range + '|' + occluderToken();
+        const cached = reachableCache.get(token.id);
+        if (cached && cached.key === cacheKey) return cached.cells;
+
+        const { edges, cells: blockedCells } = computeBlockedEdges(token.floorId);
+        const inGrid = (c, r) => c >= 0 && r >= 0 && c < grid.cols && r < grid.rows;
+        const cellBlocked = (c, r) => blockedCells.has(c + ',' + r);
+        // Arête ouverte entre deux cases orthogonalement adjacentes.
+        const edgeOpen = (c, r, nc, nr) => {
+            if (nr === r - 1) return !edges.has('H:' + r + ':' + c);       // nord
+            if (nr === r + 1) return !edges.has('H:' + (r + 1) + ':' + c); // sud
+            if (nc === c - 1) return !edges.has('V:' + c + ':' + r);       // ouest
+            if (nc === c + 1) return !edges.has('V:' + (c + 1) + ':' + r); // est
+            return false;
+        };
+
+        const result = new Set();
+        if (!inGrid(startC, startR) || cellBlocked(startC, startR)) return result;
+        const best = new Map();
+        const startKey = startC + ',' + startR;
+        best.set(startKey, 0);
+        // File de priorité minimaliste (grille ~384 cases, frontière petite).
+        const frontier = [{ c: startC, r: startR, d: 0 }];
+        while (frontier.length) {
+            let bi = 0;
+            for (let i = 1; i < frontier.length; i++) if (frontier[i].d < frontier[bi].d) bi = i;
+            const cur = frontier.splice(bi, 1)[0];
+            const curKey = cur.c + ',' + cur.r;
+            if (cur.d > (best.get(curKey) ?? Infinity)) continue;
+            result.add(curKey);
+            for (let dc = -1; dc <= 1; dc++) {
+                for (let dr = -1; dr <= 1; dr++) {
+                    if (!dc && !dr) continue;
+                    const nc = cur.c + dc, nr = cur.r + dr;
+                    if (!inGrid(nc, nr) || cellBlocked(nc, nr)) continue;
+                    const diagonal = dc !== 0 && dr !== 0;
+                    if (diagonal) {
+                        // Anti-coupe d'angle : les deux arêtes orthogonales du
+                        // coin doivent être ouvertes (on ne se faufile pas
+                        // entre deux murs qui se touchent).
+                        if (!edgeOpen(cur.c, cur.r, cur.c + dc, cur.r)
+                            || !edgeOpen(cur.c, cur.r, cur.c, cur.r + dr)) continue;
+                    } else if (!edgeOpen(cur.c, cur.r, nc, nr)) continue;
+                    const nd = cur.d + (diagonal ? DIAG_COST : 1);
+                    if (nd > range + 1e-9) continue;
+                    const nKey = nc + ',' + nr;
+                    if (nd < (best.get(nKey) ?? Infinity)) {
+                        best.set(nKey, nd);
+                        frontier.push({ c: nc, r: nr, d: nd });
+                    }
+                }
+            }
+        }
+        reachableCache.set(token.id, { key: cacheKey, cells: result });
+        return result;
     }
 
     /* Intersection rayon (p, d normalisé) × segment w → distance t, ou null */
@@ -821,6 +1024,41 @@ const MapView = (() => {
             });
     }
 
+    /* --- Zone de déplacement (E3) : cases atteignables du pion sélectionné.
+       En vue joueur, contrainte réelle (seul un PJ mobile l'affiche) ; en vue
+       MJ, simple repère (le placement reste libre). Couche non interactive :
+       le hit-test passe par cellFromEvent + l'ensemble atteignable. --- */
+    function renderMoveZone() {
+        const layer = document.getElementById('move-zone-layer');
+        if (!layer) return;
+        const sel = Store.ui.selection;
+        const floor = Store.currentFloor();
+        const items = [];
+        if (floor && sel && sel.kind === 'token') {
+            const token = Store.findToken(sel.id);
+            const movableInPlayer = token && token.playerMovable && !token.locked;
+            const shows = token && token.floorId === floor.id
+                && (!Store.isPlayerView() || (token.visible && movableInPlayer));
+            if (shows) {
+                const startKey = Math.floor(token.x) + ',' + Math.floor(token.y);
+                reachableCells(token).forEach(key => {
+                    const [c, r] = key.split(',').map(Number);
+                    items.push({ key, c, r, origin: key === startKey, color: token.color });
+                });
+            }
+        }
+        reconcileLayer(layer, items, it => it.key,
+            () => document.createElement('div'),
+            (div, it) => {
+                div.className = 'move-zone-cell' + (it.origin ? ' origin' : '');
+                div.style.left = (it.c * cellPx) + 'px';
+                div.style.top = (it.r * cellPx) + 'px';
+                div.style.width = cellPx + 'px';
+                div.style.height = cellPx + 'px';
+                div.style.setProperty('--zone-color', it.color);
+            });
+    }
+
     /* --- Rendu des entités --- */
     function renderEntities(now, snapshot) {
         const layer = document.getElementById('entities-layer');
@@ -1283,6 +1521,9 @@ const MapView = (() => {
                 && selection.kind === 'transition'
                 && selection.id === element.dataset.transitionId);
         });
+        // La zone de déplacement dépend du pion sélectionné : elle suit la
+        // sélection sans imposer un render() complet (sélection sans drag).
+        renderMoveZone();
         renderCoverageHandles(Date.now());
     }
 
@@ -1297,6 +1538,7 @@ const MapView = (() => {
             ? cameraFeedSnapshot(floor.id, now) : null;
         lastCameraFeedSignature = feed ? feed.signature : '';
         renderRooms();
+        renderMoveZone();
         renderDecors(now, feed);
         renderTransitions(now, feed);
         walls = floor ? computeOccluders(floor.id, 'optical') : [];
@@ -1378,6 +1620,7 @@ const MapView = (() => {
         moveTransitionEndpointDiv, updateSelectionClasses, setEntityScreenPos,
         conePolygon, beamPolygon, rectanglePolygon, thresholdPolygon,
         computeOccluders, invalidateOccluders, isLineBlocked,
+        computeBlockedEdges, reachableCells, renderMoveZone,
         pointInPolygon, cameraFeedSnapshot, isCameraFeedVisible,
         updateCameraFeedVisibility,
         focusElement,

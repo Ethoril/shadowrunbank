@@ -11,8 +11,8 @@ But : trois évolutions d'usage demandées le 2026-07-21.
    une zone de déplacement possible s'affiche (6 cases de base, ajustable par le MJ pion par pion), qui
    respecte les obstacles (mur, porte verrouillée…).
 
-> **État : rédigé, développement non commencé.** Document de travail à exécuter dans une ou plusieurs
-> sessions dédiées. Format calqué sur `docs/perf-plan.md`. Chaque point liste : état actuel · objectif ·
+> **État : E1, E2 et E3 livrés (2026-07-21).** Document de travail conservé comme référence de conception.
+> Format calqué sur `docs/perf-plan.md`. Chaque point liste : état actuel · objectif ·
 > conception · fichiers · effort/risque · vérification.
 >
 > Conventions repo à respecter : le build (`scripts/build-site.mjs`) tamponne seul les `?v=` (ne pas
@@ -400,8 +400,16 @@ sert de patron au perçage), `index.html` (`#move-zone-layer`), `css/style.css` 
   léger 5 % (décision utilisateur).
 - **E2 — livré** (2026-07-21) : commit `20e08e4`, hash journal `bd7b010`. Contrôles retenus = deux boutons
   distincts (⤢/⤡ agrandir-rétrécir + × réaffecté à « réduire »).
-- **E3 — non commencé** : chantier majeur, à faire dans une session dédiée (sous-lots a→f, cf. « Ordre
-  recommandé »).
+- **E3 — livré** (2026-07-21) : commit `À renseigner`. Sous-lots a→f réalisés. Écarts assumés vs. plan
+  initial : (1) seuls le **zonage** et les **portes** agissent sur les arêtes ; tout autre décor bloquant
+  (vitre, grille, pilier, mobilier) bloque des **cases** (pas d'arêtes de décor fin) — conforme à la
+  section « modèle d'obstacles » du plan et à ses tests unitaires. (2) Les **cabines d'ascenseur ne
+  bloquent pas de case** (contrairement à la suggestion « cabines → cases ») : sinon le point de passage,
+  entouré par la cabine 2×2, deviendrait inatteignable et l'embarquement inter-étages (explicitement
+  maintenu via la modale existante) serait cassé. Un pion borde donc en atteignant le point ou une case
+  adjacente à ≤ 0,8. (3) Perçage de porte = **arête la plus proche** (`round` du centre sur l'axe fin) :
+  une porte doit être posée **sur** la ligne de mur (coordonnée entière sur l'axe traversant, atteignable
+  au snap 0,5) pour percer la bonne frontière.
 
 ## Points encore ouverts (mineurs, à trancher au fil de l'eau)
 
@@ -412,5 +420,7 @@ sert de patron au perçage), `index.html` (`#move-zone-layer`), `css/style.css` 
     zonage) — comportement voulu, confirmé.
   - Une **porte simple sans maglock** est **passante par défaut** (ouvrable à la main) ; seule une porte
     **verrouillée** (maglock `active`) bloque — confirmé.
-- **E3 — reste ouvert** : animation de glissement du pion vers la case cible — v1 instantanée, polish
-  ultérieur ?
+- **E3 — reste ouvert** : animation de glissement du pion vers la case cible — **v1 livrée en pose
+  instantanée**, polish (transition `transform`) ultérieur possible. Cas limite connu : si un coéquipier
+  stationne pile sur un point de passage, taper le point sélectionne le coéquipier ; le joueur borde alors
+  en cliquant une case dégagée adjacente (à ≤ 0,8 du point) — comportement acceptable en v1.

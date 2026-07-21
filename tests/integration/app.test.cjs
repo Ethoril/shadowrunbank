@@ -690,11 +690,16 @@ test('les couches transparentes laissent sélectionner et déplacer les élémen
     assert.notDeepEqual({ x: after.x, y: after.y }, before);
     assert.deepEqual(after.selection, { kind: 'token', id: ids.token });
 
-    await page.evaluate(() => {
+    // Vue joueur (E3) : le drag ne déplace plus le pion (plus de « au doigt ») ;
+    // il ne fait que sélectionner et afficher la zone de portée. Le déplacement
+    // se fait en cliquant une case atteignable.
+    await page.evaluate(id => {
+        const token = Store.findToken(id);
+        token.x = 13; token.y = 5; token.movementRange = 6;
         Store.ui.selection = null;
         Store.ui.readOnly = true;
         App.renderAll();
-    });
+    }, ids.token);
     const playerTokenCenter = await centerOf(tokenSelector);
     const playerBefore = await page.evaluate(id => {
         const token = Store.findToken(id);
@@ -702,14 +707,35 @@ test('les couches transparentes laissent sélectionner et déplacer les élémen
     }, ids.token);
     await page.mouse.move(playerTokenCenter.x, playerTokenCenter.y);
     await page.mouse.down();
-    await page.waitForTimeout(200);
     await page.mouse.move(playerTokenCenter.x - 70, playerTokenCenter.y + 35, { steps: 5 });
     await page.mouse.up();
-    const playerAfter = await page.evaluate(id => {
+    const afterDrag = await page.evaluate(id => {
+        const token = Store.findToken(id);
+        return { x: token.x, y: token.y, selection: Store.ui.selection };
+    }, ids.token);
+    assert.deepEqual({ x: afterDrag.x, y: afterDrag.y }, playerBefore,
+        'le glisser joueur ne déplace pas le pion');
+    assert.deepEqual(afterDrag.selection, { kind: 'token', id: ids.token },
+        'mais il sélectionne le pion');
+    const zoneCells = await page.evaluate(() => document.querySelectorAll('.move-zone-cell').length);
+    assert.ok(zoneCells > 0, 'la zone de déplacement s’affiche à la sélection');
+
+    // Cliquer une case atteignable (11,5) déplace le pion à son centre.
+    const target = await page.evaluate(() => {
+        const rect = document.getElementById('board').getBoundingClientRect();
+        const grid = Store.getPlan().grid;
+        const cellPx = rect.width / grid.cols;
+        return { x: rect.left + 11.5 * cellPx, y: rect.top + 5.5 * cellPx };
+    });
+    await page.mouse.move(target.x, target.y);
+    await page.mouse.down();
+    await page.mouse.up();
+    const moved = await page.evaluate(id => {
         const token = Store.findToken(id);
         return { x: token.x, y: token.y };
     }, ids.token);
-    assert.notDeepEqual(playerAfter, playerBefore);
+    assert.deepEqual(moved, { x: 11.5, y: 5.5 },
+        'le clic sur une case atteignable déplace le pion à son centre');
     await context.close();
 });
 
@@ -860,28 +886,6 @@ test('un geste tactile respecte le verrou puis confirme une transition', async (
         };
     });
 
-    async function touchDrag(start, end) {
-        const point = (x, y) => ({ x: Math.round(x), y: Math.round(y), id: 1,
-            radiusX: 6, radiusY: 6, force: 1 });
-        await cdp.send('Input.dispatchTouchEvent', {
-            type: 'touchStart', touchPoints: [point(start.x, start.y)]
-        });
-        // Le glisser réel n'engage qu'après un court maintien (DRAG_HOLD_MS) :
-        // on le simule pour reproduire un geste humain, pas un saut instantané.
-        await new Promise(resolve => setTimeout(resolve, 200));
-        for (let step = 1; step <= 5; step += 1) {
-            const ratio = step / 5;
-            await cdp.send('Input.dispatchTouchEvent', {
-                type: 'touchMove',
-                touchPoints: [point(
-                    start.x + (end.x - start.x) * ratio,
-                    start.y + (end.y - start.y) * ratio
-                )]
-            });
-        }
-        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    }
-
     async function centerOf(selector) {
         const box = await page.locator(selector).boundingBox();
         assert.ok(box, selector + ' sans géométrie tactile');
@@ -889,17 +893,25 @@ test('un geste tactile respecte le verrou puis confirme une transition', async (
     }
 
     const tokenSelector = `.runner-token[data-id="${ids.token}"]`;
-    let tokenCenter = await centerOf(tokenSelector);
-    const lockedBefore = await page.evaluate(id => {
-        const token = Store.findToken(id);
+    const endpointSelector = `.transition-endpoint[data-transition-id="${ids.transition}"]`;
+    async function tap(center) {
+        const point = { x: Math.round(center.x), y: Math.round(center.y), id: 1,
+            radiusX: 6, radiusY: 6, force: 1 };
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    const posOf = id => page.evaluate(tokenId => {
+        const token = Store.findToken(tokenId);
         return { x: token.x, y: token.y };
-    }, ids.token);
-    await touchDrag(tokenCenter, { x: tokenCenter.x + 90, y: tokenCenter.y + 45 });
-    const lockedAfter = await page.evaluate(id => {
-        const token = Store.findToken(id);
-        return { x: token.x, y: token.y };
-    }, ids.token);
-    assert.deepEqual(lockedAfter, lockedBefore);
+    }, id);
+
+    // Pion VERROUILLÉ : la sélection reste possible, mais taper une case
+    // atteignable (E3) ne le déplace pas — le verrou est respecté.
+    const lockedBefore = await posOf(ids.token);
+    await tap(await centerOf(tokenSelector));
+    await tap(await centerOf(endpointSelector));
+    assert.deepEqual(await posOf(ids.token), lockedBefore,
+        'un pion verrouillé ne se déplace pas au clic');
 
     await page.evaluate(id => {
         Store.findToken(id).locked = false;
@@ -915,10 +927,10 @@ test('un geste tactile respecte le verrou puis confirme une transition', async (
         });
         App.renderAll();
     }, ids.token);
-    tokenCenter = await centerOf(tokenSelector);
-    const endpointCenter = await centerOf(
-        `.transition-endpoint[data-transition-id="${ids.transition}"]`);
-    await touchDrag(tokenCenter, endpointCenter);
+    // Déverrouillé : sélectionner le pion puis taper le point de passage
+    // (case atteignable) → déplacement dessus, ce qui ouvre la modale.
+    await tap(await centerOf(tokenSelector));
+    await tap(await centerOf(endpointSelector));
     await page.waitForTimeout(250);
     // La modale tactile remplace confirm() : titre + destination en bouton.
     assert.equal(await page.locator('.transition-dialog').count(), 1);
@@ -963,7 +975,7 @@ test('la modale ascenseur embarque plusieurs PJ vers l’étage choisi', async (
         stops[0].revealed = true;
         // PJ meneur à côté de la cabine, un PJ dans la cabine (coché
         // d'office), un PJ à proximité (proposé décoché).
-        const leader = Store.addToken(floors[0].id, 4, 6, 'Meneur');
+        const leader = Store.addToken(floors[0].id, 9, 6, 'Meneur');
         const inside = Store.addToken(floors[0].id, 6.5, 6, 'Dans la cabine');
         const nearby = Store.addToken(floors[0].id, 7.2, 6.8, 'À proximité');
         [leader, inside, nearby].forEach(token => { token.playerMovable = true; });
@@ -983,14 +995,19 @@ test('la modale ascenseur embarque plusieurs PJ vers l’étage choisi', async (
         return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
     }
 
+    // E3 : sélectionner le meneur puis taper le point de passage (case
+    // atteignable) le déplace dessus, ce qui ouvre la modale d'embarquement.
     const leaderCenter = await centerOf(`.runner-token[data-id="${ids.leader}"]`);
-    const endpointCenter = await centerOf(
-        `.transition-endpoint[data-transition-id="${ids.elevator}"]`);
-    await page.mouse.move(leaderCenter.x, leaderCenter.y);
-    await page.mouse.down();
-    await page.waitForTimeout(200);
-    await page.mouse.move(endpointCenter.x, endpointCenter.y, { steps: 6 });
-    await page.mouse.up();
+    await page.mouse.click(leaderCenter.x, leaderCenter.y);
+    // Le point de passage (6,6) est recouvert par le PJ « dans la cabine » ; le
+    // meneur borde donc en cliquant une case atteignable adjacente et dégagée
+    // (6,5), à portée de proximité (≤ 0,8) pour déclencher la modale.
+    const target = await page.evaluate(() => {
+        const rect = document.getElementById('board').getBoundingClientRect();
+        const cellPx = rect.width / Store.getPlan().grid.cols;
+        return { x: rect.left + 6.5 * cellPx, y: rect.top + 5.3 * cellPx };
+    });
+    await page.mouse.click(target.x, target.y);
     await page.waitForTimeout(250);
 
     assert.equal(await page.locator('.transition-dialog').count(), 1);
