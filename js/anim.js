@@ -106,41 +106,66 @@ const Anim = (() => {
         return { x: ent.x, y: ent.y };
     }
 
-    /* --- Boucle requestAnimationFrame --- */
+    /* --- Boucle requestAnimationFrame ---
+       On ne balaie plus tout l'étage à 60 fps : la liste des entités réellement
+       animées (ronde en mouvement ou balayage) est mise en cache et rafraîchie
+       par refresh() à chaque rendu. Quand elle est vide, la boucle s'arrête —
+       plus aucun coût CPU tant que rien ne bouge (autonomie tablette). */
     let rafId = null;
     let lastVisualAt = 0;
+    let animated = [];
+
+    const canSchedule = () => typeof requestAnimationFrame === 'function';
+
+    function isAnimated(ent, state) {
+        if (state === 'offline') return false;
+        const patrolling = state !== 'neutralized'
+            && ent.patrol && ent.patrol.moving && ent.patrol.points.length >= 2;
+        return patrolling || !!(ent.coverage && ent.coverage.sweep);
+    }
+
+    /* Recalcule la liste animée pour l'étage courant et (re)lance la boucle si
+       besoin. Appelé après chaque rendu (changement d'étage, d'état, édition). */
+    function refresh() {
+        const floor = Store.currentFloor();
+        animated = floor
+            ? Store.floorEntities(floor.id).filter(ent => isAnimated(ent, Store.getEffectiveState(ent)))
+            : [];
+        if (animated.length && rafId === null && canSchedule()) {
+            rafId = requestAnimationFrame(tick);
+        }
+    }
 
     function tick() {
+        rafId = null;
         const now = Date.now();
-        const floor = Store.currentFloor();
-        if (floor) {
-            let moved = false, needCoverages = false;
-            Store.floorEntities(floor.id).forEach(ent => {
-                const state = Store.getEffectiveState(ent);
-                const patrolBlocked = state === 'offline' || state === 'neutralized';
-                if (!patrolBlocked && ent.patrol && ent.patrol.moving && ent.patrol.points.length >= 2) {
-                    const pos = patrolPosition(ent.patrol, now);
-                    if (pos) MapView.setEntityScreenPos(ent.id, pos.x, pos.y);
-                    moved = true;
-                    if (ent.coverage) needCoverages = true;
-                }
-                if (ent.coverage && ent.coverage.sweep && Store.getEffectiveState(ent) !== 'offline') {
-                    needCoverages = true;
-                }
-            });
-            if (moved) MapView.renderCables(now);
-            if ((moved || needCoverages) && now - lastVisualAt > 33) { // ~30 fps pour le rendu
-                const feedChanged = MapView.updateCameraFeedVisibility(now);
-                if (needCoverages && !feedChanged) MapView.renderCoverages(now);
-                lastVisualAt = now;
+        let moved = false, needCoverages = false;
+        for (const ent of animated) {
+            const state = Store.getEffectiveState(ent);
+            const patrolBlocked = state === 'offline' || state === 'neutralized';
+            if (!patrolBlocked && ent.patrol && ent.patrol.moving && ent.patrol.points.length >= 2) {
+                const pos = patrolPosition(ent.patrol, now);
+                if (pos) MapView.setEntityScreenPos(ent.id, pos.x, pos.y);
+                moved = true;
+                if (ent.coverage) needCoverages = true;
+            }
+            if (ent.coverage && ent.coverage.sweep && state !== 'offline') {
+                needCoverages = true;
             }
         }
-        rafId = requestAnimationFrame(tick);
+        if (moved) MapView.renderCables(now);
+        if ((moved || needCoverages) && now - lastVisualAt > 33) { // ~30 fps pour le rendu
+            const feedChanged = MapView.updateCameraFeedVisibility(now);
+            if (needCoverages && !feedChanged) MapView.renderCoverages(now);
+            lastVisualAt = now;
+        }
+        if (animated.length && canSchedule()) rafId = requestAnimationFrame(tick);
     }
 
     function start() {
-        if (rafId === null) rafId = requestAnimationFrame(tick);
+        refresh();
     }
 
-    return { patrolPose, patrolPosition, sweepDirection, coverageDirection, effectivePos, start };
+    return { patrolPose, patrolPosition, sweepDirection, coverageDirection, effectivePos,
+             start, refresh };
 })();

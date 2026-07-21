@@ -58,19 +58,30 @@ const Inspector = (() => {
         body.appendChild(field('Origine de visibilité :', value));
     }
 
-    function render() {
+    function openPlayerDrawer() {
+        if (window.App && typeof App.openInspectorDrawer === 'function') {
+            App.openInspectorDrawer();
+        } else {
+            document.body.classList.add('inspector-open');
+        }
+    }
+
+    function render(options) {
+        const forceOpen = !!(options && options.forceOpen);
         const body = panel();
         body.innerHTML = '';
         const sel = Store.ui.selection;
 
         if (Store.isPlayerView()) {
             const selectionKey = sel ? sel.kind + ':' + sel.id : '';
-            if (selectionKey && selectionKey !== lastPlayerSelection) {
-                if (window.App && typeof App.openInspectorDrawer === 'function') {
-                    App.openInspectorDrawer();
-                } else {
-                    document.body.classList.add('inspector-open');
-                }
+            // Un déplacement de pion en cours ne doit jamais faire surgir
+            // l'encart : on ne l'ouvre que sur un vrai tap (forceOpen, déclenché
+            // au relâchement) ou sur un changement de sélection hors glisser.
+            const dragging = typeof Editor !== 'undefined'
+                && typeof Editor.isPointerDragging === 'function'
+                && Editor.isPointerDragging();
+            if (selectionKey && (forceOpen || (!dragging && selectionKey !== lastPlayerSelection))) {
+                openPlayerDrawer();
             }
             lastPlayerSelection = selectionKey;
         } else {
