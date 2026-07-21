@@ -305,7 +305,7 @@ const Visibility = (() => {
                 const inRoom = byRoom.get(rm.id) || [];
                 const rmHasChildren = inRoom.length > 0;
                 const rRow = row(1, rm.id, rmHasChildren, rm, 'Révéler / cacher la pièce',
-                    rm.name, `hsl(${rm.hue}, 80%, 65%)`, selectOnMap('room', rm.id),
+                    rm.name, `rgb(160,166,172)`, selectOnMap('room', rm.id),
                     'revealed', 'room');
                 if (isSelected('room', rm.id)) rRow.classList.add('selected');
                 tree.appendChild(rRow);

@@ -506,8 +506,10 @@ const MapView = (() => {
                 const isSelected = sel && sel.kind === 'room' && sel.id === room.id;
                 const hidden = !Store.isEffectivelyRevealed(room, 'room');
                 const cellSet = new Set(room.cells);
-                const fill = `hsla(${room.hue}, 90%, 60%, ${isSelected ? 0.22 : hidden ? 0.04 : 0.09})`;
-                const edge = `2px ${hidden ? 'dashed' : 'solid'} hsla(${room.hue}, 90%, 60%, ${isSelected ? 1 : hidden ? 0.4 : 0.65})`;
+                // Pièces épurées (E1) : contours blancs, remplissage neutre quasi nul.
+                // Le champ `hue` est conservé en donnée mais n'intervient plus au rendu.
+                const fill = `rgba(255,255,255, ${isSelected ? 0.10 : hidden ? 0.03 : 0.05})`;
+                const edge = `2px ${hidden ? 'dashed' : 'solid'} rgba(255,255,255, ${isSelected ? 1 : hidden ? 0.4 : 0.7})`;
 
                 let labelCol = Infinity, labelRow = Infinity;
                 room.cells.forEach(key => {
@@ -561,7 +563,7 @@ const MapView = (() => {
                     div.style.left = (it.labelCol * cellPx + 5) + 'px';
                     div.style.top = (it.labelRow * cellPx + 4) + 'px';
                     div.style.width = Math.max(1, it.labelCellWidth * cellPx - 10) + 'px';
-                    div.style.color = `hsla(${it.hue}, 70%, 72%, 0.9)`;
+                    div.style.color = `rgba(230,235,240,0.9)`;
                 }
             });
     }
