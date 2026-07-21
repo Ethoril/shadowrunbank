@@ -943,3 +943,126 @@ test('les filtres de carte MJ et joueurs sont indépendants', () => {
         coverages: false, networkLinks: true
     });
 });
+
+/* ============================================================
+   E3 — Déplacement par zone de portée
+   ============================================================ */
+
+test('E3 : un pion reçoit une portée de déplacement de 6 par défaut', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floor = Store.addFloor('E3');
+    const token = Store.addToken(floor.id, 5.5, 5.5);
+    assert.equal(token.movementRange, 6);
+    // Un pion importé sans le champ le reçoit aussi à la normalisation.
+    Store.applyRemoteTokens([{ id: 't-legacy', floorId: floor.id, x: 2, y: 2 }]);
+    assert.equal(Store.findToken('t-legacy').movementRange, 6);
+});
+
+test('E3 : computeBlockedEdges — le zonage des pièces fait mur', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.addFloor('E3');
+    const room = Store.addRoom(floor.id);
+    Store.paintCell(room, 5, 7); // pièce d'une seule case
+    const { edges } = MapView.computeBlockedEdges(floor.id);
+    // Les quatre frontières room↔vide sont des arêtes bloquées.
+    assert.ok(edges.has('V:5:7') && edges.has('V:6:7'), 'murs gauche/droite');
+    assert.ok(edges.has('H:7:5') && edges.has('H:8:5'), 'murs haut/bas');
+
+    // Frontière room↔room : deux pièces adjacentes bloquent aussi le pas.
+    const roomB = Store.addRoom(floor.id);
+    Store.paintCell(roomB, 6, 7);
+    assert.ok(MapView.computeBlockedEdges(floor.id).edges.has('V:6:7'),
+        'la frontière entre deux pièces adjacentes reste un mur');
+});
+
+test('E3 : une porte franchissable perce le mur, une porte verrouillée non', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.addFloor('E3');
+    const roomA = Store.addRoom(floor.id);
+    Store.paintCell(roomA, 4, 7); Store.paintCell(roomA, 5, 7);
+    const roomB = Store.addRoom(floor.id);
+    Store.paintCell(roomB, 6, 7); Store.paintCell(roomB, 7, 7);
+    const token = Store.addToken(floor.id, 4.5, 7.5);
+
+    // Sans porte : le mur de zonage V:6:7 confine le pion à la pièce A.
+    let reach = MapView.reachableCells(token);
+    assert.ok(reach.has('4,7') && reach.has('5,7'), 'la pièce A est atteignable');
+    assert.ok(!reach.has('6,7'), 'le mur bloque le passage vers la pièce B');
+
+    // Porte simple (sans verrou) à cheval sur V:6:7 → passage ouvert.
+    const door = Store.addDecor('opaque_door', floor.id, 6, 7.5);
+    door.rotation = 90;
+    reach = MapView.reachableCells(token);
+    assert.ok(reach.has('6,7') && reach.has('7,7'),
+        'une porte franchissable ouvre le passage vers la pièce B');
+
+    // Verrou actif sur la porte → de nouveau infranchissable.
+    const maglock = Store.addEntity('maglock', floor.id, 6, 6.5, 'Verrou');
+    door.accessEntityId = maglock.id;
+    reach = MapView.reachableCells(token);
+    assert.ok(!reach.has('6,7'), 'une porte verrouillée laisse le mur bloqué');
+
+    // Verrou piraté → porte franchissable de nouveau.
+    Store.setEntityState(maglock, 'hacked');
+    reach = MapView.reachableCells(token);
+    assert.ok(reach.has('6,7'), 'déverrouiller la porte rouvre le passage');
+});
+
+test('E3 : un décor bloquant rend sa case non-entrable', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.addFloor('E3');
+    const token = Store.addToken(floor.id, 5.5, 5.5); // zone non zonée → libre
+    Store.addDecor('pillar', floor.id, 7.5, 5.5); // pilier centré sur (7,5)
+    const { cells } = MapView.computeBlockedEdges(floor.id);
+    assert.ok(cells.has('7,5'), 'la case du pilier est marquée bloquée');
+    const reach = MapView.reachableCells(token);
+    assert.ok(!reach.has('7,5'), 'le pion ne peut pas entrer sur la case du pilier');
+    assert.ok(reach.has('6,5') && reach.has('8,5'), 'les cases voisines restent atteignables');
+
+    // Une vitre (2 × 0,2) posée au centre d'une rangée bloque ses cases.
+    Store.addDecor('glass', floor.id, 10.5, 5.5);
+    const glassCells = MapView.computeBlockedEdges(floor.id).cells;
+    assert.ok(glassCells.has('10,5'), 'la vitre bloque sa case');
+});
+
+test('E3 : reachableCells — portée octile bornée, sans coupe d’angle', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.addFloor('E3');
+    const token = Store.addToken(floor.id, 12.5, 8.5); // large zone libre
+    token.movementRange = 6;
+
+    const cells = MapView.reachableCells(token);
+    assert.ok(cells.has('12,8'), 'la case de départ est incluse');
+    assert.ok(cells.has('18,8'), '6 pas orthogonaux → atteignable');
+    assert.ok(!cells.has('19,8'), '7 pas orthogonaux → hors de portée');
+    assert.ok(cells.has('16,12'), '4 diagonales (coût 6) → atteignable');
+    assert.ok(!cells.has('17,13'), '5 diagonales (coût 7,5) → hors de portée');
+
+    // Réduire la portée réduit l'ensemble atteignable.
+    token.movementRange = 2;
+    const small = MapView.reachableCells(token);
+    assert.ok(small.has('14,8') && !small.has('15,8'), 'portée 2 : 2 pas max');
+    assert.ok(small.size < cells.size, 'une portée plus faible réduit la zone');
+});
+
+test('E3 : une diagonale ne se faufile pas entre deux murs qui se touchent', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.addFloor('E3');
+    // Deux pièces qui ne se touchent QUE par un coin (diagonale).
+    const roomA = Store.addRoom(floor.id);
+    Store.paintCell(roomA, 4, 7); Store.paintCell(roomA, 5, 7);
+    const roomB = Store.addRoom(floor.id);
+    Store.paintCell(roomB, 6, 6); Store.paintCell(roomB, 7, 6);
+    const token = Store.addToken(floor.id, 4.5, 7.5);
+    token.movementRange = 6;
+    const reach = MapView.reachableCells(token);
+    assert.ok(reach.has('4,7') && reach.has('5,7'), 'la pièce A reste atteignable');
+    assert.ok(!reach.has('6,6'),
+        'le coin partagé (murs sur les deux arêtes) ne laisse pas passer la diagonale');
+});

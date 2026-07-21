@@ -263,6 +263,11 @@ const Store = (() => {
             playerMovable: token.playerMovable !== false,
             visible: token.visible !== false,
             locked: token.locked === true,
+            // Portée de déplacement en cases (E3), ajustable par le MJ pion par
+            // pion ; entier borné, défaut 6. Les pions existants la reçoivent au
+            // chargement (aucune migration).
+            movementRange: Number.isFinite(token.movementRange)
+                ? Math.max(0, Math.min(40, Math.round(token.movementRange))) : 6,
             updatedAt: Number.isFinite(token.updatedAt) ? token.updatedAt : Date.now()
         };
     }
@@ -1210,7 +1215,8 @@ const Store = (() => {
         const token = normalizeToken({
             id: uid('token'), name: name || 'Runner ' + (tokens.length + 1),
             shortLabel: 'PJ', color: '#00d2ff', icon: 'runner', floorId, x, y,
-            playerMovable: true, visible: true, locked: false, updatedAt: Date.now()
+            playerMovable: true, visible: true, locked: false, movementRange: 6,
+            updatedAt: Date.now()
         });
         tokens.push(token);
         saveToken(token);
@@ -1225,6 +1231,7 @@ const Store = (() => {
         token.playerMovable = source.playerMovable;
         token.visible = source.visible;
         token.locked = source.locked;
+        token.movementRange = source.movementRange;
         saveToken(token);
         return token;
     }

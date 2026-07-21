@@ -799,6 +799,12 @@ const Inspector = (() => {
         body.appendChild(checkboxField('Déplaçable par les joueurs', token.playerMovable, value => {
             token.playerMovable = value; save();
         }));
+        // Portée de déplacement (E3) : rayon octile de la zone atteignable en
+        // vue joueur. Re-rend les pions ET la zone si ce pion est sélectionné.
+        body.appendChild(field('Portée de déplacement (cases) :',
+            numberInput(token.movementRange, 0, 40, 1, value => {
+                token.movementRange = Math.round(value); save(true);
+            })));
         body.appendChild(checkboxField('Verrouiller temporairement', token.locked, value => {
             token.locked = value; save();
         }));
