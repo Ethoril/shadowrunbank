@@ -7,7 +7,6 @@
 const Inspector = (() => {
 
     const panel = () => document.getElementById('inspector-body');
-    let lastPlayerSelection = '';
 
     function field(labelText, inputEl) {
         const wrap = document.createElement('div');
@@ -58,35 +57,14 @@ const Inspector = (() => {
         body.appendChild(field('Origine de visibilité :', value));
     }
 
-    function openPlayerDrawer() {
-        if (window.App && typeof App.openInspectorDrawer === 'function') {
-            App.openInspectorDrawer();
-        } else {
-            document.body.classList.add('inspector-open');
-        }
-    }
-
-    function render(options) {
-        const forceOpen = !!(options && options.forceOpen);
+    // E2 : en vue joueur, l'encart d'inspecteur est un panneau accosté permanent
+    // (états réduit/aperçu/agrandi pilotés par App). `render()` ne fait que
+    // (re)remplir le contenu depuis la sélection ; il ne change plus jamais
+    // l'état d'ouverture — un clic sur la carte remplit la carte en place.
+    function render() {
         const body = panel();
         body.innerHTML = '';
         const sel = Store.ui.selection;
-
-        if (Store.isPlayerView()) {
-            const selectionKey = sel ? sel.kind + ':' + sel.id : '';
-            // Un déplacement de pion en cours ne doit jamais faire surgir
-            // l'encart : on ne l'ouvre que sur un vrai tap (forceOpen, déclenché
-            // au relâchement) ou sur un changement de sélection hors glisser.
-            const dragging = typeof Editor !== 'undefined'
-                && typeof Editor.isPointerDragging === 'function'
-                && Editor.isPointerDragging();
-            if (selectionKey && (forceOpen || (!dragging && selectionKey !== lastPlayerSelection))) {
-                openPlayerDrawer();
-            }
-            lastPlayerSelection = selectionKey;
-        } else {
-            lastPlayerSelection = '';
-        }
 
         if (!sel) {
             const hint = document.createElement('div');

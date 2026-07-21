@@ -210,7 +210,8 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
 }
 
 .inspector-title { display: flex; align-items: center; justify-content: space-between; }
-#inspector-close, #player-inspector-toggle { display: none; }
+.inspector-title-controls { display: flex; align-items: center; gap: 6px; }
+#inspector-close, #inspector-expand, #player-inspector-toggle { display: none; }
 
 /* Palette d'outils */
 .tool-btn {
@@ -1121,39 +1122,52 @@ hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin:
         min-height: 44px;
         padding: 8px 14px;
     }
+    /* Encart d'inspecteur accosté (E2) : carte fixe au coin haut-droit de la zone
+       carte, toujours présente, réductible. Plus de tiroir hors-écran ni de voile ;
+       la carte-jeu reste manipulable à côté. `--inspector-dock-top` (posé par main.js)
+       cale le haut de la carte juste sous les onglets d'étage. */
     body.player-mode #inspector-panel {
         display: flex;
         position: fixed;
         z-index: 400;
-        top: 0;
-        right: 0;
-        bottom: 0;
-        width: min(390px, 82vw);
-        padding: max(16px, env(safe-area-inset-top)) 16px
-                 max(16px, env(safe-area-inset-bottom));
+        top: var(--inspector-dock-top, 88px);
+        right: max(12px, env(safe-area-inset-right));
+        bottom: auto;
+        left: auto;
+        width: min(320px, 84vw);
+        max-width: 84vw;
+        max-height: min(42dvh, 380px);
+        padding: 12px 14px;
         border-color: var(--primary);
-        box-shadow: -14px 0 35px rgba(0, 0, 0, 0.78);
-        transform: translateX(105%);
-        transition: transform 0.22s ease-out;
+        box-shadow: 0 14px 35px rgba(0, 0, 0, 0.7);
+        transform: none;
+        transition: none;
+        overflow-y: auto;
+        overscroll-behavior: contain;
     }
-    body.player-mode.inspector-open #inspector-panel { transform: translateX(0); }
-    body.player-mode #inspector-close {
+    /* Aperçu (compact) = petit ; agrandi (full) = grand ; réduit (collapsed) = masqué. */
+    body.player-mode[data-inspector="full"] #inspector-panel {
+        width: min(420px, 92vw);
+        max-width: 92vw;
+        max-height: calc(100dvh - var(--inspector-dock-top, 88px) - 16px);
+    }
+    body.player-mode[data-inspector="collapsed"] #inspector-panel { display: none; }
+    body.player-mode #inspector-close,
+    body.player-mode #inspector-expand {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 44px;
-        min-height: 44px;
-        font-size: 1.35rem;
+        min-width: 40px;
+        min-height: 40px;
+        font-size: 1.2rem;
     }
-    body.player-mode #player-inspector-toggle {
+    /* Bouton ⓘ : visible seulement quand l'encart est réduit, même coin haut-droit. */
+    body.player-mode[data-inspector="collapsed"] #player-inspector-toggle {
         display: block;
         position: fixed;
         z-index: 300;
-        right: max(18px, env(safe-area-inset-right));
-        /* Empilé au-dessus des contrôles de zoom (même coin bas-droit) pour ne
-           pas les recouvrir. L'offset reprend la base du padding bas du body
-           (comme .zoom-controls) + la hauteur du bloc zoom tactile. */
-        bottom: calc(max(var(--page-pad), env(safe-area-inset-bottom)) + 76px);
+        top: var(--inspector-dock-top, 88px);
+        right: max(12px, env(safe-area-inset-right));
         min-width: 92px;
         min-height: 44px;
         padding: 8px 12px;
@@ -1163,32 +1177,17 @@ hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin:
         box-shadow: 0 0 14px rgba(0, 210, 255, 0.35);
         font: inherit;
     }
-    body.player-mode.inspector-open #player-inspector-toggle { display: none; }
-    body.player-mode #panel-backdrop {
-        display: block;
-        position: fixed;
-        z-index: 350;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        padding: 0;
-        border: 0;
-        background: rgba(0, 0, 0, 0.64);
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.18s ease-out;
-    }
-    body.player-mode.inspector-open #panel-backdrop { opacity: 1; pointer-events: auto; }
-    body.player-mode #inspector-panel button,
+    /* Plus de surimpression en vue joueur (le voile reste réservé au tiroir Outils MJ). */
+    body.player-mode #panel-backdrop { display: none; }
     body.player-mode #inspector-panel select,
     body.player-mode #inspector-panel input { min-height: 44px; }
 }
 
-/* Tablette portrait : tiroirs inférieurs afin de conserver toute la largeur de carte. */
+/* Tablette portrait MJ : tiroirs inférieurs afin de conserver toute la largeur de
+   carte. En vue joueur, l'encart reste la carte accostée haut-droite (E2, ci-dessus). */
 @media (max-width: 1600px) and (max-height: 2400px) and (orientation: portrait) {
-    #tools-panel, #inspector-panel,
-    body.player-mode #inspector-panel {
+    body:not(.player-mode) #tools-panel,
+    body:not(.player-mode) #inspector-panel {
         top: auto;
         left: 0;
         right: 0;
@@ -1199,9 +1198,8 @@ hr.ins-sep { border: none; border-top: 1px solid rgba(0, 210, 255, 0.1); margin:
         transform: translateY(105%);
         box-shadow: 0 -14px 35px rgba(0, 0, 0, 0.8);
     }
-    body.tools-open #tools-panel,
-    body.inspector-open #inspector-panel,
-    body.player-mode.inspector-open #inspector-panel { transform: translateY(0); }
+    body:not(.player-mode).tools-open #tools-panel,
+    body:not(.player-mode).inspector-open #inspector-panel { transform: translateY(0); }
     body.player-mode header h1 { max-width: 58vw; }
 }
 
