@@ -307,6 +307,11 @@ const Editor = (() => {
         window.addEventListener('pointermove', onPointerMove);
         window.addEventListener('pointerup', onPointerUp);
         window.addEventListener('pointercancel', onPointerUp);
+        // La géométrie figée du plateau (dragGeom) doit suivre un défilement du
+        // wrapper ou un redimensionnement survenant pendant un drag.
+        const wrapper = document.getElementById('map-wrapper');
+        if (wrapper) wrapper.addEventListener('scroll', refreshDragGeometry, { passive: true });
+        window.addEventListener('resize', refreshDragGeometry);
         wireZoomAndPan();
     }
 
@@ -323,6 +328,7 @@ const Editor = (() => {
         if (dragSession) {
             if (dragSession.kind !== 'token') Store.cancelTransaction();
             dragSession = null;
+            endDragCoalescing();
             MapView.render();
         }
     }
@@ -671,77 +677,130 @@ const Editor = (() => {
         }
     }
 
+    /* Coalescence des pointermove pendant un drag : on ne retient que le
+       dernier pointeur et on n'applique qu'une seule mise à jour par frame
+       (requestAnimationFrame). Couplée au rect de plateau figé (dragGeom,
+       plus de getBoundingClientRect par move), elle supprime la
+       lecture+écriture de layout entrelacée à chaque event = fin du layout
+       thrashing pendant le glisser d'un pion. */
+    let dragGeom = null;       // { rect, cellPx } figé au premier mouvement
+    let pendingPointer = null; // dernier { clientX, clientY } non appliqué
+    let moveRaf = null;
+    const canRaf = typeof requestAnimationFrame === 'function';
+    const cancelRaf = typeof cancelAnimationFrame === 'function'
+        ? cancelAnimationFrame : () => {};
+
     function onPointerMove(e) {
         if (paintSession) {
             paintAt(e);
             return;
         }
-        if (dragSession) {
-            if (!dragSession.thresholdPassed) {
-                if (Date.now() - dragSession.downTime < DRAG_HOLD_MS) return;
-                dragSession.thresholdPassed = true;
+        if (!dragSession) return;
+        pendingPointer = { clientX: e.clientX, clientY: e.clientY };
+        if (canRaf) {
+            if (moveRaf === null) moveRaf = requestAnimationFrame(flushPointerMove);
+        } else {
+            flushPointerMove();
+        }
+    }
+
+    function flushPointerMove() {
+        moveRaf = null;
+        if (!dragSession || !pendingPointer) return;
+        const pointer = pendingPointer;
+        pendingPointer = null;
+        applyDragMove(pointer);
+    }
+
+    /* Rafraîchit la géométrie figée si le plateau a pu bouger sous le
+       pointeur pendant le geste (défilement du wrapper, redimensionnement).
+       Tant que le premier mouvement n'a pas figé la géométrie (dragGeom
+       null), on la laisse se capturer fraîche à ce moment-là. */
+    function refreshDragGeometry() {
+        if (dragSession && dragGeom) dragGeom = MapView.captureBoardGeometry();
+    }
+
+    function endDragCoalescing() {
+        if (moveRaf !== null) { cancelRaf(moveRaf); moveRaf = null; }
+        pendingPointer = null;
+        dragGeom = null;
+    }
+
+    function applyDragMove(pointer) {
+        if (!dragSession.thresholdPassed) {
+            if (Date.now() - dragSession.downTime < DRAG_HOLD_MS) return;
+            dragSession.thresholdPassed = true;
+        }
+        if (!dragGeom) dragGeom = MapView.captureBoardGeometry();
+        const pos = MapView.gridPosFromEvent(pointer, dragGeom);
+        const grid = Store.getPlan().grid;
+        if (dragSession.kind === 'decor') {
+            const decor = Store.findDecor(dragSession.id);
+            if (!decor) { dragSession = null; return; }
+            const bounded = clampDecorPos(pos, decor, grid);
+            decor.x = bounded.x;
+            decor.y = bounded.y;
+            dragSession.moved = true;
+            MapView.moveDecorDiv(decor.id, decor.x, decor.y);
+        } else if (dragSession.kind === 'entity') {
+            const ent = Store.findEntity(dragSession.id);
+            if (!ent) { dragSession = null; return; }
+            const bounded = clampEntityPos(pos, grid);
+            ent.x = bounded.x;
+            ent.y = bounded.y;
+            dragSession.moved = true;
+            MapView.moveEntityDiv(ent.id, ent.x, ent.y);
+        } else if (dragSession.kind === 'token') {
+            const token = Store.findToken(dragSession.id);
+            if (!token) { dragSession = null; return; }
+            const bounded = clampEntityPos(pos, grid);
+            token.x = bounded.x;
+            token.y = bounded.y;
+            dragSession.moved = true;
+            MapView.moveTokenDiv(token.id, token.x, token.y);
+            if (typeof Exploration !== 'undefined') Exploration.observeTokenMove(token);
+        } else if (dragSession.kind === 'transition') {
+            const transition = Store.findTransition(dragSession.id);
+            const endpoint = transition && transition.endpoints.find(item => item.id === dragSession.endpointId);
+            if (!endpoint) { dragSession = null; return; }
+            const bounded = clampEntityPos(pos, grid);
+            endpoint.x = bounded.x;
+            endpoint.y = bounded.y;
+            // Les liaisons à position partagée se déplacent en bloc sur
+            // tous leurs étages raccordés.
+            if (['stairs', 'ladder', 'elevator'].includes(transition.type)) {
+                transition.endpoints.forEach(item => {
+                    item.x = bounded.x;
+                    item.y = bounded.y;
+                });
             }
-            const pos = MapView.gridPosFromEvent(e);
-            const grid = Store.getPlan().grid;
-            if (dragSession.kind === 'decor') {
-                const decor = Store.findDecor(dragSession.id);
-                if (!decor) { dragSession = null; return; }
-                const bounded = clampDecorPos(pos, decor, grid);
-                decor.x = bounded.x;
-                decor.y = bounded.y;
-                dragSession.moved = true;
-                MapView.moveDecorDiv(decor.id, decor.x, decor.y);
-            } else if (dragSession.kind === 'entity') {
-                const ent = Store.findEntity(dragSession.id);
-                if (!ent) { dragSession = null; return; }
-                const bounded = clampEntityPos(pos, grid);
-                ent.x = bounded.x;
-                ent.y = bounded.y;
-                dragSession.moved = true;
-                MapView.moveEntityDiv(ent.id, ent.x, ent.y);
-            } else if (dragSession.kind === 'token') {
-                const token = Store.findToken(dragSession.id);
-                if (!token) { dragSession = null; return; }
-                const bounded = clampEntityPos(pos, grid);
-                token.x = bounded.x;
-                token.y = bounded.y;
-                dragSession.moved = true;
-                MapView.moveTokenDiv(token.id, token.x, token.y);
-                if (typeof Exploration !== 'undefined') Exploration.observeTokenMove(token);
-            } else if (dragSession.kind === 'transition') {
-                const transition = Store.findTransition(dragSession.id);
-                const endpoint = transition && transition.endpoints.find(item => item.id === dragSession.endpointId);
-                if (!endpoint) { dragSession = null; return; }
-                const bounded = clampEntityPos(pos, grid);
-                endpoint.x = bounded.x;
-                endpoint.y = bounded.y;
-                // Les liaisons à position partagée se déplacent en bloc sur
-                // tous leurs étages raccordés.
-                if (['stairs', 'ladder', 'elevator'].includes(transition.type)) {
-                    transition.endpoints.forEach(item => {
-                        item.x = bounded.x;
-                        item.y = bounded.y;
-                    });
-                }
-                dragSession.moved = true;
-                MapView.moveTransitionEndpointDiv(transition.id, endpoint.id, endpoint.x, endpoint.y);
-            } else if (dragSession.kind === 'waypoint') {
-                const ent = Store.findEntity(dragSession.id);
-                const point = ent && ent.patrol && ent.patrol.points[dragSession.index];
-                if (!point) { Store.cancelTransaction(); dragSession = null; return; }
-                point.x = snapCoord(Math.min(Math.max(pos.x, 0), grid.cols));
-                point.y = snapCoord(Math.min(Math.max(pos.y, 0), grid.rows));
-                dragSession.moved = true;
-                MapView.renderPatrols();
-            } else if (dragSession.kind === 'coverage') {
-                const changed = updateCoverageFromPointer(dragSession, pos);
-                dragSession.moved = dragSession.moved || changed;
-                if (changed) MapView.renderCoverages(Date.now());
-            }
+            dragSession.moved = true;
+            MapView.moveTransitionEndpointDiv(transition.id, endpoint.id, endpoint.x, endpoint.y);
+        } else if (dragSession.kind === 'waypoint') {
+            const ent = Store.findEntity(dragSession.id);
+            const point = ent && ent.patrol && ent.patrol.points[dragSession.index];
+            if (!point) { Store.cancelTransaction(); dragSession = null; return; }
+            point.x = snapCoord(Math.min(Math.max(pos.x, 0), grid.cols));
+            point.y = snapCoord(Math.min(Math.max(pos.y, 0), grid.rows));
+            dragSession.moved = true;
+            MapView.renderPatrols();
+        } else if (dragSession.kind === 'coverage') {
+            const changed = updateCoverageFromPointer(dragSession, pos);
+            dragSession.moved = dragSession.moved || changed;
+            if (changed) MapView.renderCoverages(Date.now());
         }
     }
 
     function onPointerUp() {
+        // Applique tout de suite le dernier déplacement coalescé encore en
+        // attente : la position validée au drop ne doit jamais perdre une
+        // frame qui n'aurait pas encore été émise par le rAF.
+        if (dragSession && pendingPointer) {
+            if (moveRaf !== null) { cancelRaf(moveRaf); moveRaf = null; }
+            const pointer = pendingPointer;
+            pendingPointer = null;
+            applyDragMove(pointer);
+        }
         if (paintSession) {
             paintSession = null;
             Store.endTransaction();
@@ -754,7 +813,12 @@ const Editor = (() => {
                     Store.commitTokenPosition(token);
                     const changedFloor = typeof Exploration !== 'undefined'
                         && Exploration.handleTokenRelease(token);
-                    if (!changedFloor) MapView.render();
+                    // Vue joueur : un rendu complet révèle les découvertes faites
+                    // en chemin. Vue MJ : le pion est déjà posé et rien d'autre
+                    // sur la carte ne dépend de sa position → simple settle.
+                    if (changedFloor) { /* App.renderAll déjà déclenché par la transition */ }
+                    else if (Store.isPlayerView()) MapView.render();
+                    else MapView.settleTokenDrag(token.id);
                 }
             } else if (completed.moved) {
                 const label = completed.kind === 'waypoint' ? 'Déplacer un waypoint'
@@ -775,6 +839,7 @@ const Editor = (() => {
                 Inspector.render({ forceOpen: true });
             }
         }
+        endDragCoalescing();
     }
 
     /* Appelé par map.js au pointerdown sur une icône d'entité (mode sélection uniquement) */
