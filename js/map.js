@@ -18,6 +18,12 @@ const MapView = (() => {
     let walls = [];   // segments de murs de l'étage courant (coordonnées grille)
     const occluderCache = new Map();
     let occluderBuilds = 0;
+    // Géométrie des cônes/faisceaux mémorisée par entité (points en pixels).
+    // Un cône statique (caméra fixe, pas de balayage) garde la même signature
+    // d'une frame à l'autre → on ne relance PAS le ray-casting (conePolygon)
+    // à 30 fps. Vidé dès que la géométrie occultante change (invalidateOccluders).
+    const coveragePolyCache = new Map();
+    let coverageBuilds = 0;
     // La géométrie occultante (murs, décors/entités bloquant la vue, cabines)
     // ne change qu'à l'édition, jamais pendant l'animation des rondes/balayages.
     // On invalide donc explicitement via un compteur d'époque au lieu de
@@ -34,6 +40,15 @@ const MapView = (() => {
     const board = () => document.getElementById('board');
     const svgGroup = id => document.getElementById(id);
     const iconSrc = key => 'assets/icons/map/' + key + '.png';
+
+    /* Position d'un élément mobile via transform (composité GPU) plutôt que
+       left/top (reflow). --tx/--ty (centre en pixels) sont consommés par le
+       `transform` du CSS ; les changer ne déclenche qu'un recompositing. */
+    function setLayerPos(el, x, y) {
+        if (!el) return;
+        el.style.setProperty('--tx', (x * cellPx) + 'px');
+        el.style.setProperty('--ty', (y * cellPx) + 'px');
+    }
 
     function appendCatalogIcon(container, key, className, fallbackLabel, fallbackClassName) {
         const fallback = () => {
@@ -104,13 +119,26 @@ const MapView = (() => {
         setZoom(ZOOM_MIN);
     }
 
-    /* Coordonnées grille (flottantes) depuis un événement souris */
-    function gridPosFromEvent(e) {
-        const rect = board().getBoundingClientRect();
+    /* Coordonnées grille (flottantes) depuis un événement souris.
+       `cache` = { rect, cellPx } optionnel : pendant un drag, on fige la
+       géométrie du plateau au début du geste pour ne PAS relire
+       getBoundingClientRect() (lecture de layout) à chaque déplacement —
+       c'est ce qui, entrelacé avec l'écriture left/top, provoquait le
+       layout thrashing. Sans cache, comportement inchangé. */
+    function gridPosFromEvent(e, cache) {
+        const rect = cache ? cache.rect : board().getBoundingClientRect();
+        const px = cache ? cache.cellPx : cellPx;
         return {
-            x: (e.clientX - rect.left) / cellPx,
-            y: (e.clientY - rect.top) / cellPx
+            x: (e.clientX - rect.left) / px,
+            y: (e.clientY - rect.top) / px
         };
+    }
+
+    /* Fige la géométrie courante du plateau (rect écran + taille de case)
+       pour la durée d'un drag. À rafraîchir si le wrapper défile, si l'on
+       zoome ou si la fenêtre est redimensionnée. */
+    function captureBoardGeometry() {
+        return { rect: board().getBoundingClientRect(), cellPx };
     }
 
     /* Case entière (col/row) depuis un événement souris, null si hors grille */
@@ -337,6 +365,8 @@ const MapView = (() => {
     // computeOccluders reconstruiront (une fois par canal) puis re-cacheront.
     function invalidateOccluders() {
         occluderEpoch += 1;
+        // La forme des cônes dépend des occulteurs : leur cache tombe avec eux.
+        coveragePolyCache.clear();
     }
 
     /* Vue live fournie par les caméras piratées. Rien n'est écrit dans les
@@ -423,103 +453,211 @@ const MapView = (() => {
         });
     }
 
+    /* Réconciliation d'une couche HTML par clé — pendant de reconcileSvgGroup
+       pour le SVG. On RÉUTILISE les nœuds existants au lieu de vider la couche
+       (`innerHTML = ''`) et tout recréer à chaque rendu. Bénéfices :
+       - les écouteurs pointerdown posés à la création sont conservés (une
+         seule attache par nœud) ;
+       - les images ne sont ni détruites ni redécodées ;
+       - plus de churn DOM/GC sur zoom / pan / sélection / drop / édition.
+       Contrats :
+       - keyOf(item)   : clé stable (id d'entité, de pion, de case…) ;
+       - create(item)  : crée le conteneur nu + attache l'écouteur (une fois) ;
+       - update(el,item): réaffecte className + styles à chaque frame (bon
+         marché, jamais de classe/état oublié) et ne reconstruit les enfants
+         que si une signature de contenu (`data-sig`) a changé.
+       L'ordre du tableau `items` est réimposé (insertBefore ne déplace qu'en
+       cas de besoin) : l'empilement reste identique à un rendu complet. */
+    function reconcileLayer(layer, items, keyOf, create, update) {
+        const existing = new Map();
+        Array.from(layer.children).forEach(child => {
+            const key = child.dataset.key;
+            if (key === undefined) { child.remove(); return; }
+            existing.set(key, child);
+        });
+        const seen = new Set();
+        let anchor = null;
+        items.forEach(item => {
+            const key = keyOf(item);
+            if (seen.has(key)) return; // clé dupliquée : on ignore le doublon
+            seen.add(key);
+            let el = existing.get(key);
+            if (!el) {
+                el = create(item);
+                el.dataset.key = key;
+            }
+            update(el, item);
+            const next = anchor ? anchor.nextSibling : layer.firstChild;
+            if (el !== next) layer.insertBefore(el, next);
+            anchor = el;
+        });
+        existing.forEach((el, key) => { if (!seen.has(key)) el.remove(); });
+    }
+
     /* --- Rendu des pièces : cases peintes, bordure sur les arêtes extérieures --- */
     function renderRooms() {
         const layer = document.getElementById('rooms-layer');
-        layer.innerHTML = '';
+        if (!layer) return;
         const floor = Store.currentFloor();
-        if (!floor) return;
         const sel = Store.ui.selection;
+        const items = [];
+        if (floor) {
+            Store.visibleRooms(floor.id).forEach(room => {
+                const isSelected = sel && sel.kind === 'room' && sel.id === room.id;
+                const hidden = !Store.isEffectivelyRevealed(room, 'room');
+                const cellSet = new Set(room.cells);
+                const fill = `hsla(${room.hue}, 90%, 60%, ${isSelected ? 0.22 : hidden ? 0.04 : 0.09})`;
+                const edge = `2px ${hidden ? 'dashed' : 'solid'} hsla(${room.hue}, 90%, 60%, ${isSelected ? 1 : hidden ? 0.4 : 0.65})`;
 
-        Store.visibleRooms(floor.id).forEach(room => {
-            const isSelected = sel && sel.kind === 'room' && sel.id === room.id;
-            const hidden = !Store.isEffectivelyRevealed(room, 'room');
-            const cellSet = new Set(room.cells);
-            const fill = `hsla(${room.hue}, 90%, 60%, ${isSelected ? 0.22 : hidden ? 0.04 : 0.09})`;
-            const edge = `2px ${hidden ? 'dashed' : 'solid'} hsla(${room.hue}, 90%, 60%, ${isSelected ? 1 : hidden ? 0.4 : 0.65})`;
+                let labelCol = Infinity, labelRow = Infinity;
+                room.cells.forEach(key => {
+                    const [c, r] = key.split(',').map(Number);
+                    if (r < labelRow || (r === labelRow && c < labelCol)) { labelRow = r; labelCol = c; }
+                    items.push({
+                        kind: 'cell', key: 'c:' + c + ',' + r, roomId: room.id, c, r, fill, edge,
+                        // Contour calculé : bordure uniquement si pas de voisin dans la même pièce
+                        top: !cellSet.has(c + ',' + (r - 1)),
+                        bottom: !cellSet.has(c + ',' + (r + 1)),
+                        left: !cellSet.has((c - 1) + ',' + r),
+                        right: !cellSet.has((c + 1) + ',' + r)
+                    });
+                });
 
-            let labelCol = Infinity, labelRow = Infinity;
-            room.cells.forEach(key => {
-                const [c, r] = key.split(',').map(Number);
-                if (r < labelRow || (r === labelRow && c < labelCol)) { labelRow = r; labelCol = c; }
-
-                const div = document.createElement('div');
-                div.className = 'room-cell';
-                div.dataset.roomId = room.id;
-                div.style.left = (c * cellPx) + 'px';
-                div.style.top = (r * cellPx) + 'px';
-                div.style.width = cellPx + 'px';
-                div.style.height = cellPx + 'px';
-                div.style.background = fill;
-                // Contour calculé : bordure uniquement si pas de voisin dans la même pièce
-                if (!cellSet.has(c + ',' + (r - 1))) div.style.borderTop = edge;
-                if (!cellSet.has(c + ',' + (r + 1))) div.style.borderBottom = edge;
-                if (!cellSet.has((c - 1) + ',' + r)) div.style.borderLeft = edge;
-                if (!cellSet.has((c + 1) + ',' + r)) div.style.borderRight = edge;
-                layer.appendChild(div);
-            });
-
-            if (room.cells.length > 0) {
-                // Le libellé part de la première case de la ligne la plus
-                // haute. Sur une pièce irrégulière, on le limite au segment
-                // continu réellement disponible afin qu'il ne déborde pas
-                // dans une autre zone.
-                let labelCellWidth = 1;
-                while (cellSet.has((labelCol + labelCellWidth) + ',' + labelRow)) {
-                    labelCellWidth++;
+                if (room.cells.length > 0) {
+                    // Le libellé part de la première case de la ligne la plus
+                    // haute. Sur une pièce irrégulière, on le limite au segment
+                    // continu réellement disponible afin qu'il ne déborde pas
+                    // dans une autre zone.
+                    let labelCellWidth = 1;
+                    while (cellSet.has((labelCol + labelCellWidth) + ',' + labelRow)) {
+                        labelCellWidth++;
+                    }
+                    items.push({
+                        kind: 'label', key: 'l:' + room.id, roomId: room.id, name: room.name,
+                        hidden, labelCol, labelRow, labelCellWidth, hue: room.hue
+                    });
                 }
-                const label = document.createElement('div');
-                label.className = 'room-label' + (hidden ? ' unrevealed' : '');
-                label.dataset.roomId = room.id;
-                label.textContent = room.name;
-                label.style.left = (labelCol * cellPx + 5) + 'px';
-                label.style.top = (labelRow * cellPx + 4) + 'px';
-                label.style.width = Math.max(1, labelCellWidth * cellPx - 10) + 'px';
-                label.style.color = `hsla(${room.hue}, 70%, 72%, 0.9)`;
-                layer.appendChild(label);
-            }
-        });
+            });
+        }
+        reconcileLayer(layer, items, it => it.key,
+            () => document.createElement('div'),
+            (div, it) => {
+                if (it.kind === 'cell') {
+                    div.className = 'room-cell';
+                    div.dataset.roomId = it.roomId;
+                    div.style.left = (it.c * cellPx) + 'px';
+                    div.style.top = (it.r * cellPx) + 'px';
+                    div.style.width = cellPx + 'px';
+                    div.style.height = cellPx + 'px';
+                    div.style.background = it.fill;
+                    div.style.borderTop = it.top ? it.edge : '';
+                    div.style.borderBottom = it.bottom ? it.edge : '';
+                    div.style.borderLeft = it.left ? it.edge : '';
+                    div.style.borderRight = it.right ? it.edge : '';
+                } else {
+                    div.className = 'room-label' + (it.hidden ? ' unrevealed' : '');
+                    div.dataset.roomId = it.roomId;
+                    div.textContent = it.name;
+                    div.style.left = (it.labelCol * cellPx + 5) + 'px';
+                    div.style.top = (it.labelRow * cellPx + 4) + 'px';
+                    div.style.width = Math.max(1, it.labelCellWidth * cellPx - 10) + 'px';
+                    div.style.color = `hsla(${it.hue}, 70%, 72%, 0.9)`;
+                }
+            });
     }
 
-    /* --- Rendu des décors, séparé entre sol et obstacles --- */
+    /* --- Rendu des décors, séparé entre sol et obstacles ---
+       Les deux couches sont réconciliées par clé. La couche « obstacles »
+       héberge à la fois les décors et les cabines d'ascenseur : on la
+       réconcilie donc à partir d'une liste unifiée (clés `decor:` / `cabin:`)
+       pour qu'aucune des deux familles n'efface l'autre. */
     function renderDecors(now, snapshot) {
         const floorLayer = document.getElementById('decors-floor-layer');
         const obstacleLayer = document.getElementById('decors-layer');
         if (!floorLayer || !obstacleLayer) return;
-        floorLayer.innerHTML = '';
-        obstacleLayer.innerHTML = '';
-        const floor = Store.currentFloor();
-        if (!floor) return;
         const passThrough = Store.ui.activeTool !== 'select';
         floorLayer.classList.toggle('pass-through', passThrough);
         obstacleLayer.classList.toggle('pass-through', passThrough);
-        const selection = Store.ui.selection;
 
-        const feed = feedSnapshot(floor.id, now, snapshot);
-        const decors = Store.isPlayerView()
-            ? cameraVisibleItems(Store.floorDecors(floor.id), 'decor', feed)
-            : Store.visibleDecors(floor.id);
+        const floor = Store.currentFloor();
+        const feed = floor ? feedSnapshot(floor.id, now, snapshot) : null;
+        const decors = !floor ? []
+            : Store.isPlayerView()
+                ? cameraVisibleItems(Store.floorDecors(floor.id), 'decor', feed)
+                : Store.visibleDecors(floor.id);
+        const floorItems = [];
+        const obstacleItems = [];
         decors.forEach(decor => {
-            const definition = DecorCatalog.get(decor.type);
-            const accessOpen = Store.isAccessOpen(decor);
-            const div = document.createElement('div');
-            div.className = 'decor'
-                + (definition.layer === 'floor' ? ' floor-decor' : '')
-                + (decor.blocksVision.length ? ' blocks-vision' : '')
-                + (accessOpen ? ' access-open' : '')
-                + (Store.isPlayerView() || Store.isEffectivelyRevealed(decor, 'decor') ? '' : ' unrevealed');
-            if (selection && selection.kind === 'decor' && selection.id === decor.id) {
-                div.classList.add('selected');
-            }
-            div.dataset.id = decor.id;
-            div.style.left = (decor.x * cellPx) + 'px';
-            div.style.top = (decor.y * cellPx) + 'px';
-            div.style.width = (decor.width * cellPx) + 'px';
-            div.style.height = (decor.height * cellPx) + 'px';
-            div.style.color = definition.color;
-            div.style.setProperty('--decor-rotation', decor.rotation + 'deg');
-            div.title = decor.name + (decor.accessEntityId
-                ? (accessOpen ? ' — OUVERT' : ' — VERROUILLÉ') : '');
+            const item = { kind: 'decor', key: 'decor:' + decor.id, decor };
+            (DecorCatalog.get(decor.type).layer === 'floor' ? floorItems : obstacleItems).push(item);
+        });
+        if (floor) {
+            visibleCabins(floor, feed).forEach(cabin =>
+                obstacleItems.push({ kind: 'cabin', key: 'cabin:' + cabin.transition.id, cabin }));
+        }
+        reconcileLayer(floorLayer, floorItems, it => it.key, createDecorItem, updateDecorItem);
+        reconcileLayer(obstacleLayer, obstacleItems, it => it.key, createDecorItem, updateDecorItem);
+    }
+
+    /* Cabines à afficher sur l'étage (7.8). Vue joueur : seulement avec porte
+       sur l'étage courant et transition révélée (ou vue via un flux caméra).
+       Vue MJ : toute la plage desservie, en fantôme là où il n'y a pas de porte. */
+    function visibleCabins(floor, feed) {
+        return Store.elevatorCabinsOnFloor(floor.id).filter(cabin => {
+            if (!Store.isPlayerView()) return true;
+            if (!cabin.hasDoor) return false;
+            const revealed = Store.isEndpointRevealed(cabin.transition, cabin.endpoint);
+            return revealed || !!(feed && feed.transitionIds.includes(cabin.transition.id));
+        });
+    }
+
+    function createDecorItem(it) {
+        const div = document.createElement('div');
+        if (it.kind === 'decor') {
+            const decorId = it.decor.id;
+            div.dataset.id = decorId;
+            div.addEventListener('pointerdown', event => {
+                event.stopPropagation();
+                Editor.onDecorPointerDown(event, decorId);
+            });
+        } else {
+            // Cabine : l'endpoint (donc la cible du drag) est relu dans le
+            // dataset au clic, jamais figé dans la fermeture.
+            div.addEventListener('pointerdown', event => {
+                event.stopPropagation();
+                Editor.onTransitionPointerDown(event, div.dataset.transitionId,
+                    div.dataset.endpointId || null);
+            });
+        }
+        return div;
+    }
+
+    function updateDecorItem(div, it) {
+        if (it.kind === 'decor') updateDecorEl(div, it.decor);
+        else updateCabinEl(div, it.cabin);
+    }
+
+    function updateDecorEl(div, decor) {
+        const definition = DecorCatalog.get(decor.type);
+        const accessOpen = Store.isAccessOpen(decor);
+        const selection = Store.ui.selection;
+        div.className = 'decor'
+            + (definition.layer === 'floor' ? ' floor-decor' : '')
+            + (decor.blocksVision.length ? ' blocks-vision' : '')
+            + (accessOpen ? ' access-open' : '')
+            + (Store.isPlayerView() || Store.isEffectivelyRevealed(decor, 'decor') ? '' : ' unrevealed')
+            + (selection && selection.kind === 'decor' && selection.id === decor.id ? ' selected' : '');
+        setLayerPos(div, decor.x, decor.y);
+        div.style.width = (decor.width * cellPx) + 'px';
+        div.style.height = (decor.height * cellPx) + 'px';
+        div.style.color = definition.color;
+        div.style.setProperty('--decor-rotation', decor.rotation + 'deg');
+        div.title = decor.name + (decor.accessEntityId
+            ? (accessOpen ? ' — OUVERT' : ' — VERROUILLÉ') : '');
+        const sig = 'd|' + (definition.icon || '') + '|' + (definition.label || '') + '|' + (accessOpen ? '1' : '0');
+        if (div.dataset.sig !== sig) {
+            div.dataset.sig = sig;
+            div.textContent = '';
             appendCatalogIcon(div, definition.icon, 'decor-icon', definition.label, 'decor-label');
             if (accessOpen) {
                 const badge = document.createElement('span');
@@ -527,199 +665,209 @@ const MapView = (() => {
                 badge.textContent = 'OUVERT';
                 div.appendChild(badge);
             }
-            div.addEventListener('pointerdown', event => {
-                event.stopPropagation();
-                Editor.onDecorPointerDown(event, decor.id);
-            });
-            (definition.layer === 'floor' ? floorLayer : obstacleLayer).appendChild(div);
-        });
-        renderElevatorCabins(obstacleLayer, floor, feed);
+        }
     }
 
-    /* Cabines d'ascenseur générées depuis les transitions (7.8) : la
-       géométrie est celle de `cabin`, la position celle des endpoints.
-       Vue joueur : seulement avec porte sur l'étage courant et transition
-       révélée (ou vue via un flux caméra). Vue MJ : la gaine apparaît sur
-       toute la plage desservie, en fantôme quand il n'y a pas de porte. */
-    function renderElevatorCabins(layer, floor, feed) {
+    function updateCabinEl(div, cabin) {
+        const transition = cabin.transition;
+        // Révélation par arrêt : la porte de cet étage n'apparaît que si son
+        // propre point est dévoilé/découvert (ou vu via une caméra).
+        const revealed = Store.isEndpointRevealed(transition, cabin.endpoint);
         const selection = Store.ui.selection;
-        Store.elevatorCabinsOnFloor(floor.id).forEach(cabin => {
-            const transition = cabin.transition;
-            // Révélation par arrêt : la porte de cet étage n'apparaît que si
-            // son propre point est dévoilé/découvert (ou vu via une caméra).
-            const revealed = Store.isEndpointRevealed(transition, cabin.endpoint);
-            if (Store.isPlayerView()) {
-                if (!cabin.hasDoor) return;
-                if (!revealed && !(feed && feed.transitionIds.includes(transition.id))) return;
-            }
-            const div = document.createElement('div');
-            div.className = 'decor elevator-cabin'
-                + (cabin.hasDoor ? '' : ' ghost')
-                + (Store.isPlayerView() || revealed ? '' : ' unrevealed')
-                + (selection && selection.kind === 'transition'
-                    && selection.id === transition.id ? ' selected' : '');
-            div.dataset.transitionId = transition.id;
-            div.style.left = (cabin.x * cellPx) + 'px';
-            div.style.top = (cabin.y * cellPx) + 'px';
-            div.style.width = (cabin.width * cellPx) + 'px';
-            div.style.height = (cabin.height * cellPx) + 'px';
-            div.style.color = CABIN_COLOR;
-            div.style.setProperty('--decor-rotation', cabin.rotation + 'deg');
-            div.title = transition.name + (cabin.hasDoor ? '' : ' — gaine sans porte');
+        div.className = 'decor elevator-cabin'
+            + (cabin.hasDoor ? '' : ' ghost')
+            + (Store.isPlayerView() || revealed ? '' : ' unrevealed')
+            + (selection && selection.kind === 'transition'
+                && selection.id === transition.id ? ' selected' : '');
+        div.dataset.transitionId = transition.id;
+        div.dataset.endpointId = cabin.endpoint ? cabin.endpoint.id : '';
+        setLayerPos(div, cabin.x, cabin.y);
+        div.style.width = (cabin.width * cellPx) + 'px';
+        div.style.height = (cabin.height * cellPx) + 'px';
+        div.style.color = CABIN_COLOR;
+        div.style.setProperty('--decor-rotation', cabin.rotation + 'deg');
+        div.title = transition.name + (cabin.hasDoor ? '' : ' — gaine sans porte');
+        const sig = 'c|' + (cabin.hasDoor ? 'door-' + cabin.doorSide : 'nodoor');
+        if (div.dataset.sig !== sig) {
+            div.dataset.sig = sig;
+            div.textContent = '';
             appendCatalogIcon(div, 'elevator-decor', 'decor-icon', 'ELV', 'decor-label');
             if (cabin.hasDoor) {
                 const door = document.createElement('div');
                 door.className = 'elevator-cabin-door door-' + cabin.doorSide;
                 div.appendChild(door);
             }
-            div.addEventListener('pointerdown', event => {
-                event.stopPropagation();
-                Editor.onTransitionPointerDown(event, transition.id,
-                    cabin.endpoint ? cabin.endpoint.id : null);
-            });
-            layer.appendChild(div);
-        });
+        }
     }
+
+    const TRANSITION_LABELS = { stairs: 'ESC', elevator: 'ELV', ladder: 'ECH', hatch: 'TRP', passage: 'PAS' };
+    const TRANSITION_ICONS = { stairs: 'stairs', elevator: 'elevator', ladder: 'ladder', hatch: 'hatch', passage: 'opening' };
 
     function renderTransitions(now, snapshot) {
         const layer = document.getElementById('transitions-layer');
         if (!layer) return;
-        layer.innerHTML = '';
-        const floor = Store.currentFloor();
-        if (!floor) return;
         layer.classList.toggle('pass-through', Store.ui.activeTool !== 'select');
-        const labels = { stairs: 'ESC', elevator: 'ELV', ladder: 'ECH', hatch: 'TRP', passage: 'PAS' };
-        const icons = { stairs: 'stairs', elevator: 'elevator', ladder: 'ladder', hatch: 'hatch', passage: 'opening' };
-        const feed = feedSnapshot(floor.id, now, snapshot);
+        const floor = Store.currentFloor();
+        const feed = floor ? feedSnapshot(floor.id, now, snapshot) : null;
         // La visibilité se décide point par point : un endpoint dévoilé (ou
         // découvert, ou vu via caméra) apparaît sans exposer les autres points
         // de la même transition. On part donc de toutes les transitions ayant
         // un point sur l'étage et on filtre endpoint par endpoint plus bas.
-        const transitions = Store.getPlan().transitions.filter(transition =>
-            transition.endpoints.some(endpoint => endpoint.floorId === floor.id));
-        transitions.forEach(transition => {
-            const cameraSeen = !!(feed && feed.transitionIds.includes(transition.id));
-            transition.endpoints.filter(endpoint => endpoint.floorId === floor.id).forEach(endpoint => {
-                // Sans porte, la gaine seule occupe l'étage. Même le MJ ne
-                // voit pas d'icône d'arrêt, pour éviter toute ambiguïté.
-                const doorless = transition.type === 'elevator' && endpoint.hasDoor === false;
-                if (doorless) return;
-                const revealed = Store.isEndpointRevealed(transition, endpoint) || cameraSeen;
-                if (Store.isPlayerView() && !revealed) return;
+        const items = [];
+        if (floor) {
+            Store.getPlan().transitions.filter(transition =>
+                transition.endpoints.some(endpoint => endpoint.floorId === floor.id)).forEach(transition => {
+                const cameraSeen = !!(feed && feed.transitionIds.includes(transition.id));
+                transition.endpoints.filter(endpoint => endpoint.floorId === floor.id).forEach(endpoint => {
+                    // Sans porte, la gaine seule occupe l'étage. Même le MJ ne
+                    // voit pas d'icône d'arrêt, pour éviter toute ambiguïté.
+                    const doorless = transition.type === 'elevator' && endpoint.hasDoor === false;
+                    if (doorless) return;
+                    const revealed = Store.isEndpointRevealed(transition, endpoint) || cameraSeen;
+                    if (Store.isPlayerView() && !revealed) return;
+                    items.push({ key: 'ep:' + transition.id + ':' + endpoint.id, transition, endpoint, revealed });
+                });
+            });
+        }
+        reconcileLayer(layer, items, it => it.key,
+            it => {
                 const div = document.createElement('div');
-                div.className = 'transition-endpoint state-' + transition.state
-                    + (Store.ui.selection && Store.ui.selection.kind === 'transition'
-                        && Store.ui.selection.id === transition.id ? ' selected' : '')
-                    + (Store.isPlayerView() || revealed ? '' : ' unrevealed');
-                div.dataset.transitionId = transition.id;
-                div.dataset.endpointId = endpoint.id;
-                div.style.left = (endpoint.x * cellPx) + 'px';
-                div.style.top = (endpoint.y * cellPx) + 'px';
-                div.dataset.symbol = labels[transition.type] || 'TR';
-                const letter = Store.endpointLetter(transition, endpoint);
-                div.title = transition.name + (endpoint.label ? ' — ' + endpoint.label : '')
-                    + (letter ? ' (' + letter + ')' : '');
-                const transitionIcon = icons[transition.type];
-                if (transitionIcon) {
-                    div.classList.add('has-icon');
-                    const image = appendCatalogIcon(div, transitionIcon, 'transition-icon', '', 'transition-label');
-                    if (image) image.addEventListener('error', () => div.classList.remove('has-icon'), { once: true });
-                }
-                if (transition.type === 'stairs') {
-                    // 7.9 : l'icône reflète le sens autorisé depuis cet endpoint.
-                    const exit = Store.stairsExitDirection(transition, endpoint);
-                    const badge = document.createElement('span');
-                    badge.className = 'transition-direction' + (exit ? '' : ' blocked');
-                    badge.textContent = exit === 'up' ? '↑'
-                        : exit === 'down' ? '↓' : exit === 'both' ? '⇅' : '✕';
-                    div.appendChild(badge);
-                    div.title += exit === 'up' ? ' — monte'
-                        : exit === 'down' ? ' — descend'
-                        : exit ? '' : ' — sans issue depuis cet étage';
-                }
+                div.dataset.transitionId = it.transition.id;
+                div.dataset.endpointId = it.endpoint.id;
                 div.addEventListener('pointerdown', event => {
                     event.stopPropagation();
-                    Editor.onTransitionPointerDown(event, transition.id, endpoint.id);
+                    Editor.onTransitionPointerDown(event, div.dataset.transitionId, div.dataset.endpointId);
                 });
-                layer.appendChild(div);
-            });
-        });
+                return div;
+            },
+            (div, it) => updateTransitionEl(div, it));
+    }
+
+    function updateTransitionEl(div, it) {
+        const { transition, endpoint, revealed } = it;
+        const transitionIcon = TRANSITION_ICONS[transition.type];
+        // 7.9 : l'icône d'escalier reflète le sens autorisé depuis cet endpoint.
+        const exit = transition.type === 'stairs'
+            ? Store.stairsExitDirection(transition, endpoint) : null;
+        div.className = 'transition-endpoint state-' + transition.state
+            + (transitionIcon ? ' has-icon' : '')
+            + (Store.ui.selection && Store.ui.selection.kind === 'transition'
+                && Store.ui.selection.id === transition.id ? ' selected' : '')
+            + (Store.isPlayerView() || revealed ? '' : ' unrevealed');
+        setLayerPos(div, endpoint.x, endpoint.y);
+        div.dataset.symbol = TRANSITION_LABELS[transition.type] || 'TR';
+        const letter = Store.endpointLetter(transition, endpoint);
+        div.title = transition.name + (endpoint.label ? ' — ' + endpoint.label : '')
+            + (letter ? ' (' + letter + ')' : '')
+            + (transition.type !== 'stairs' ? '' : exit === 'up' ? ' — monte'
+                : exit === 'down' ? ' — descend' : exit ? '' : ' — sans issue depuis cet étage');
+        // Enfants reconstruits à chaque rendu : peu de points par étage, et cela
+        // préserve la bascule has-icon ↔ symbole ::after gérée à l'échec de
+        // chargement de l'icône.
+        div.textContent = '';
+        if (transitionIcon) {
+            const image = appendCatalogIcon(div, transitionIcon, 'transition-icon', '', 'transition-label');
+            if (image) image.addEventListener('error', () => div.classList.remove('has-icon'), { once: true });
+        }
+        if (transition.type === 'stairs') {
+            const badge = document.createElement('span');
+            badge.className = 'transition-direction' + (exit ? '' : ' blocked');
+            badge.textContent = exit === 'up' ? '↑'
+                : exit === 'down' ? '↓' : exit === 'both' ? '⇅' : '✕';
+            div.appendChild(badge);
+        }
     }
 
     function renderTokens() {
         const layer = document.getElementById('tokens-layer');
         if (!layer) return;
-        layer.innerHTML = '';
         layer.classList.toggle('pass-through', Store.ui.activeTool !== 'select');
         const floor = Store.currentFloor();
-        if (!floor) return;
-        Store.visibleTokens(floor.id).forEach(token => {
-            const div = document.createElement('div');
-            div.className = 'runner-token'
-                + (token.locked ? ' locked' : '')
-                + (token.visible ? '' : ' unrevealed')
-                + (Store.ui.selection && Store.ui.selection.kind === 'token'
-                    && Store.ui.selection.id === token.id ? ' selected' : '');
-            div.dataset.id = token.id;
-            div.style.left = (token.x * cellPx) + 'px';
-            div.style.top = (token.y * cellPx) + 'px';
-            div.style.color = token.color;
-            div.style.borderColor = token.color;
-            const tokenIcon = /^[a-z0-9-]+$/.test(token.icon || '') ? token.icon : 'runner';
-            appendCatalogIcon(div, tokenIcon, 'token-icon', '', 'token-icon-fallback');
-            const label = document.createElement('span');
-            label.className = 'token-label';
-            label.textContent = token.shortLabel;
-            div.appendChild(label);
-            div.title = token.name;
-            div.addEventListener('pointerdown', event => {
-                event.stopPropagation();
-                Editor.onTokenPointerDown(event, token.id);
+        const tokens = floor ? Store.visibleTokens(floor.id) : [];
+        reconcileLayer(layer, tokens, token => token.id,
+            token => {
+                const tokenId = token.id;
+                const div = document.createElement('div');
+                div.dataset.id = tokenId;
+                div.addEventListener('pointerdown', event => {
+                    event.stopPropagation();
+                    Editor.onTokenPointerDown(event, tokenId);
+                });
+                return div;
+            },
+            (div, token) => {
+                div.className = 'runner-token'
+                    + (token.locked ? ' locked' : '')
+                    + (token.visible ? '' : ' unrevealed')
+                    + (Store.ui.selection && Store.ui.selection.kind === 'token'
+                        && Store.ui.selection.id === token.id ? ' selected' : '');
+                setLayerPos(div, token.x, token.y);
+                div.style.color = token.color;
+                div.style.borderColor = token.color;
+                div.title = token.name;
+                const tokenIcon = /^[a-z0-9-]+$/.test(token.icon || '') ? token.icon : 'runner';
+                const sig = 'tok|' + tokenIcon + '|' + token.shortLabel;
+                if (div.dataset.sig !== sig) {
+                    div.dataset.sig = sig;
+                    div.textContent = '';
+                    appendCatalogIcon(div, tokenIcon, 'token-icon', '', 'token-icon-fallback');
+                    const label = document.createElement('span');
+                    label.className = 'token-label';
+                    label.textContent = token.shortLabel;
+                    div.appendChild(label);
+                }
             });
-            layer.appendChild(div);
-        });
     }
 
     /* --- Rendu des entités --- */
     function renderEntities(now, snapshot) {
         const layer = document.getElementById('entities-layer');
-        layer.innerHTML = '';
+        if (!layer) return;
+        // Les entités ne captent la souris qu'en mode sélection (sinon elles gêneraient la peinture/tracé)
+        layer.classList.toggle('pass-through', Store.ui.activeTool !== 'select');
         const floor = Store.currentFloor();
-        if (!floor) return;
-        const sel = Store.ui.selection;
+        if (!floor) {
+            reconcileLayer(layer, [], ent => ent.id, createEntityEl, () => {});
+            return;
+        }
         const at = now === undefined ? Date.now() : now;
         const feed = feedSnapshot(floor.id, at, snapshot);
         const entities = Store.isPlayerView()
             ? cameraVisibleItems(Store.floorEntities(floor.id), 'entity', feed)
             : Store.visibleEntities(floor.id);
-
-        // Les entités ne captent la souris qu'en mode sélection (sinon elles gêneraient la peinture/tracé)
-        layer.classList.toggle('pass-through', Store.ui.activeTool !== 'select');
-
-        entities.forEach(ent => {
-            const def = EntityCatalog.get(ent.type);
-            const pos = Anim.effectivePos(ent, at);
-            const div = document.createElement('div');
-            div.className = 'entity state-' + Store.getEffectiveState(ent)
-                + (Store.isPlayerView() || Store.isEffectivelyRevealed(ent, 'entity') ? '' : ' unrevealed');
-            div.dataset.id = ent.id;
-            div.style.left = (pos.x * cellPx) + 'px';
-            div.style.top = (pos.y * cellPx) + 'px';
-            div.style.color = def.color;
-            div.style.borderColor = def.color;
-            appendCatalogIcon(div, def.icon, 'entity-icon', def.label, 'entity-label');
-            div.title = ent.name;
-            if (sel && sel.kind === 'entity' && sel.id === ent.id) div.classList.add('selected');
-
-            div.addEventListener('pointerdown', e => {
-                e.stopPropagation();
-                Editor.onEntityPointerDown(e, ent.id);
-            });
-
-            layer.appendChild(div);
-        });
-
+        reconcileLayer(layer, entities, ent => ent.id, createEntityEl,
+            (div, ent) => updateEntityEl(div, ent, at));
         renderOverlay();
+    }
+
+    function createEntityEl(ent) {
+        const entId = ent.id;
+        const div = document.createElement('div');
+        div.dataset.id = entId;
+        div.addEventListener('pointerdown', e => {
+            e.stopPropagation();
+            Editor.onEntityPointerDown(e, entId);
+        });
+        return div;
+    }
+
+    function updateEntityEl(div, ent, at) {
+        const def = EntityCatalog.get(ent.type);
+        const pos = Anim.effectivePos(ent, at);
+        const sel = Store.ui.selection;
+        div.className = 'entity state-' + Store.getEffectiveState(ent)
+            + (Store.isPlayerView() || Store.isEffectivelyRevealed(ent, 'entity') ? '' : ' unrevealed')
+            + (sel && sel.kind === 'entity' && sel.id === ent.id ? ' selected' : '');
+        setLayerPos(div, pos.x, pos.y);
+        div.style.color = def.color;
+        div.style.borderColor = def.color;
+        div.title = ent.name;
+        const sig = 'e|' + (def.icon || '') + '|' + (def.label || '');
+        if (div.dataset.sig !== sig) {
+            div.dataset.sig = sig;
+            div.textContent = '';
+            appendCatalogIcon(div, def.icon, 'entity-icon', def.label, 'entity-label');
+        }
     }
 
     /* --- Overlay SVG : couvertures (fond), rondes, câbles (dessus) --- */
@@ -760,11 +908,16 @@ const MapView = (() => {
 
     function renderOverlay() {
         const svg = document.getElementById('overlay-svg');
-        svg.innerHTML = '';
+        if (!svg) return;
+        // Groupes créés une seule fois et réutilisés (dans l'ordre = ordre de
+        // peinture). Les nœuds réconciliés (couvertures, câbles) survivent ainsi
+        // aussi aux rendus complets, pas seulement aux frames d'animation.
         ['g-coverages', 'g-coverage-handles', 'g-patrols', 'g-cables'].forEach(id => {
-            const g = document.createElementNS(SVG_NS, 'g');
-            g.id = id;
-            svg.appendChild(g);
+            if (!document.getElementById(id)) {
+                const g = document.createElementNS(SVG_NS, 'g');
+                g.id = id;
+                svg.appendChild(g);
+            }
         });
         const now = Date.now();
         renderCoverages(now);
@@ -802,8 +955,47 @@ const MapView = (() => {
             const pos = Anim.effectivePos(ent, now);
             const coverage = ent.coverage;
             const dir = Anim.coverageDirection(ent, now);
-            const occluders = computeOccluders(floor.id, coverage.channel);
-            const attrs = {
+
+            // Signature géométrique = tout ce qui déplace/redécoupe le polygone :
+            // occulteurs (jeton), échelle (cellPx), position, cap, forme et cotes.
+            // Identique d'une frame à l'autre pour un cône statique → cache hit.
+            const geomSig = occluderToken() + '|' + cellPx + '|' + pos.x + '|' + pos.y
+                + '|' + dir + '|' + coverage.shape + '|' + coverage.range
+                + '|' + coverage.width + '|' + coverage.angle + '|' + coverage.radius
+                + '|' + coverage.channel;
+            let cached = coveragePolyCache.get(ent.id);
+            if (!cached || cached.sig !== geomSig) {
+                const occluders = computeOccluders(floor.id, coverage.channel);
+                const geom = {};
+                if (coverage.shape === 'circle' && occluders.length === 0) {
+                    geom.tag = 'circle';
+                    geom.attrs = { cx: pos.x * cellPx, cy: pos.y * cellPx, r: coverage.radius * cellPx };
+                } else {
+                    let points;
+                    if (coverage.shape === 'beam') {
+                        points = beamPolygon(pos.x, pos.y, dir, coverage.range, coverage.width, occluders);
+                    } else if (coverage.shape === 'rectangle') {
+                        points = rectanglePolygon(pos.x, pos.y, dir, coverage.range, coverage.width);
+                    } else if (coverage.shape === 'threshold') {
+                        points = thresholdPolygon(pos.x, pos.y, dir, coverage.range, coverage.width);
+                    } else if (coverage.shape === 'circle') {
+                        points = conePolygon(pos.x, pos.y, 0, 360, coverage.radius, occluders);
+                    } else {
+                        points = conePolygon(pos.x, pos.y, dir, coverage.angle, coverage.range, occluders);
+                    }
+                    geom.tag = 'polygon';
+                    geom.attrs = { points: points.map(point =>
+                        (point[0] * cellPx) + ',' + (point[1] * cellPx)).join(' ') };
+                }
+                coverageBuilds += 1;
+                cached = { sig: geomSig, tag: geom.tag, attrs: geom.attrs };
+                coveragePolyCache.set(ent.id, cached);
+            }
+
+            // Le style (couleur/opacité/pointillé) dépend de l'état et de la
+            // révélation, pas de la géométrie : recalculé à chaque frame (bon
+            // marché), fusionné avec la géométrie mémorisée.
+            const attrs = Object.assign({
                 fill: color,
                 'fill-opacity': hidden ? '0.05' : effState === 'hacked' ? '0.14' : '0.10',
                 stroke: color,
@@ -811,32 +1003,9 @@ const MapView = (() => {
                 'stroke-width': coverage.shape === 'beam' ? '1.5' : '1',
                 // toujours défini (jamais retiré) pour un nœud réutilisé d'une frame à l'autre
                 'stroke-dasharray': hidden ? '4 4' : 'none'
-            };
-            let tag;
-            if (coverage.shape === 'circle' && occluders.length === 0) {
-                tag = 'circle';
-                attrs.cx = pos.x * cellPx;
-                attrs.cy = pos.y * cellPx;
-                attrs.r = coverage.radius * cellPx;
-            } else {
-                let points;
-                if (coverage.shape === 'beam') {
-                    points = beamPolygon(pos.x, pos.y, dir, coverage.range, coverage.width, occluders);
-                } else if (coverage.shape === 'rectangle') {
-                    points = rectanglePolygon(pos.x, pos.y, dir, coverage.range, coverage.width);
-                } else if (coverage.shape === 'threshold') {
-                    points = thresholdPolygon(pos.x, pos.y, dir, coverage.range, coverage.width);
-                } else if (coverage.shape === 'circle') {
-                    points = conePolygon(pos.x, pos.y, 0, 360, coverage.radius, occluders);
-                } else {
-                    points = conePolygon(pos.x, pos.y, dir, coverage.angle, coverage.range, occluders);
-                }
-                tag = 'polygon';
-                attrs.points = points.map(point =>
-                    (point[0] * cellPx) + ',' + (point[1] * cellPx)).join(' ');
-            }
+            }, cached.attrs);
             specs.push({
-                key: ent.id, tag, attrs,
+                key: ent.id, tag: cached.tag, attrs,
                 data: { entityId: ent.id, shape: coverage.shape, channel: coverage.channel }
             });
         });
@@ -1036,19 +1205,14 @@ const MapView = (() => {
 
     /* Position écran directe (drag / animation), sans reconstruire la couche */
     function setEntityScreenPos(entityId, x, y) {
-        const div = document.querySelector(`.entity[data-id="${entityId}"]`);
-        if (div) {
-            div.style.left = (x * cellPx) + 'px';
-            div.style.top = (y * cellPx) + 'px';
-        }
+        setLayerPos(document.querySelector(`.entity[data-id="${entityId}"]`), x, y);
     }
 
     /* Déplacement pendant un drag : position + câbles + couvertures suivent */
     function moveEntityDiv(entityId, x, y) {
         const div = document.querySelector(`.entity[data-id="${entityId}"]`);
         if (div) {
-            div.style.left = (x * cellPx) + 'px';
-            div.style.top = (y * cellPx) + 'px';
+            setLayerPos(div, x, y);
             div.classList.add('dragging');
         }
         // Glisser une entité occultante (barrière de mana) déplace un occulteur
@@ -1061,8 +1225,7 @@ const MapView = (() => {
     function moveDecorDiv(decorId, x, y) {
         const div = document.querySelector(`.decor[data-id="${decorId}"]`);
         if (div) {
-            div.style.left = (x * cellPx) + 'px';
-            div.style.top = (y * cellPx) + 'px';
+            setLayerPos(div, x, y);
             div.classList.add('dragging');
         }
         // Idem : un décor opaque déplacé doit re-découper les cônes en direct.
@@ -1073,25 +1236,30 @@ const MapView = (() => {
     function moveTokenDiv(tokenId, x, y) {
         const div = document.querySelector(`.runner-token[data-id="${tokenId}"]`);
         if (div) {
-            div.style.left = (x * cellPx) + 'px';
-            div.style.top = (y * cellPx) + 'px';
+            setLayerPos(div, x, y);
             div.classList.add('dragging');
         }
+    }
+
+    /* Fin de drag d'un pion sans reconstruire la carte : le pion est déjà à sa
+       position finale (posée pendant le glisser) et rien d'autre sur la carte
+       ne dépend de sa position (les cônes/câbles suivent les dispositifs, pas
+       les pions). On retire juste l'état de drag. Utilisé en vue MJ ; en vue
+       joueur, un render() complet reste nécessaire pour révéler les
+       découvertes faites en chemin. */
+    function settleTokenDrag(tokenId) {
+        const div = document.querySelector(`.runner-token[data-id="${tokenId}"]`);
+        if (div) div.classList.remove('dragging');
     }
 
     function moveTransitionEndpointDiv(transitionId, endpointId, x, y) {
         const div = document.querySelector(`.transition-endpoint[data-transition-id="${transitionId}"][data-endpoint-id="${endpointId}"]`);
         if (div) {
-            div.style.left = (x * cellPx) + 'px';
-            div.style.top = (y * cellPx) + 'px';
+            setLayerPos(div, x, y);
             div.classList.add('dragging');
         }
         // La gaine suit son endpoint pendant le drag (coordonnées partagées).
-        const cabin = document.querySelector(`.elevator-cabin[data-transition-id="${transitionId}"]`);
-        if (cabin) {
-            cabin.style.left = (x * cellPx) + 'px';
-            cabin.style.top = (y * cellPx) + 'px';
-        }
+        setLayerPos(document.querySelector(`.elevator-cabin[data-transition-id="${transitionId}"]`), x, y);
     }
 
     function updateSelectionClasses() {
@@ -1149,6 +1317,12 @@ const MapView = (() => {
     /* Appelé par la boucle d'animation : ne reconstruit les couches que
        lorsqu'un élément entre ou sort réellement d'un flux caméra. */
     function updateCameraFeedVisibility(now) {
+        // Pendant un drag actif, on ne relance pas les re-rendus de couches
+        // pilotés par le flux caméra (renderEntities/decors/…) : ils entreraient
+        // en concurrence avec le geste. Le flux se resynchronise au relâchement
+        // (render() en vue joueur). Les cônes qui balaient continuent, eux, de
+        // s'animer via renderCoverages dans la boucle.
+        if (typeof Editor !== 'undefined' && Editor.isPointerDragging()) return false;
         const floor = Store.currentFloor();
         const snapshot = floor && Store.isPlayerView()
             ? cameraFeedSnapshot(floor.id, now) : null;
@@ -1198,7 +1372,7 @@ const MapView = (() => {
         catalog, render, renderDecors, renderTransitions, renderTokens,
         renderEntities, renderOverlay, renderCoverages, renderCoverageHandles,
         renderCones, renderPatrols, renderCables,
-        gridPosFromEvent, cellFromEvent, moveEntityDiv, moveDecorDiv, moveTokenDiv,
+        gridPosFromEvent, captureBoardGeometry, cellFromEvent, moveEntityDiv, moveDecorDiv, moveTokenDiv, settleTokenDrag,
         moveTransitionEndpointDiv, updateSelectionClasses, setEntityScreenPos,
         conePolygon, beamPolygon, rectanglePolygon, thresholdPolygon,
         computeOccluders, invalidateOccluders, isLineBlocked,
@@ -1209,6 +1383,7 @@ const MapView = (() => {
         getZoom: () => zoom,
         getZoomRange: () => ({ min: ZOOM_MIN, max: ZOOM_MAX }),
         getOccluderCacheStats: () => ({ entries: occluderCache.size, builds: occluderBuilds }),
+        getCoverageCacheStats: () => ({ entries: coveragePolyCache.size, builds: coverageBuilds }),
         getWalls: () => walls
     };
 })();
