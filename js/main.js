@@ -36,6 +36,12 @@ const App = (() => {
         document.body.classList.toggle('preview-mode', Store.ui.preview);
         if (lastPlayerView !== null && lastPlayerView !== playerView) closeDrawers();
         lastPlayerView = playerView;
+        // Vue joueur : encart d'inspecteur accosté permanent (E2). On applique
+        // l'état persisté (réduit/aperçu/agrandi) et on positionne la carte sous
+        // les onglets d'étage. En MJ l'attribut est ignoré par le CSS.
+        document.body.dataset.inspector = Store.getInspectorViewState();
+        updatePlayerInspectorControls();
+        updatePlayerInspectorDock();
         const btn = document.getElementById('preview-btn');
         if (btn) {
             btn.style.display = Store.ui.readOnly ? 'none' : '';
@@ -111,12 +117,25 @@ const App = (() => {
         const inspectorToggle = document.getElementById('inspector-toggle');
         const toolsClose = document.getElementById('tools-close');
         const inspectorClose = document.getElementById('inspector-close');
+        const inspectorExpand = document.getElementById('inspector-expand');
         const backdrop = document.getElementById('panel-backdrop');
-        if (playerToggle) playerToggle.addEventListener('click', () => toggleDrawer('inspector'));
+        // En vue joueur, ⓘ / × / ⤢ pilotent l'encart accosté (E2) ; en MJ-tablette
+        // ce sont les mêmes boutons qui ouvrent/ferment le tiroir en surimpression.
+        if (playerToggle) playerToggle.addEventListener('click', () => {
+            if (Store.isPlayerView()) setPlayerInspectorState('compact');
+            else toggleDrawer('inspector');
+        });
         if (toolsToggle) toolsToggle.addEventListener('click', () => toggleDrawer('tools'));
         if (inspectorToggle) inspectorToggle.addEventListener('click', () => toggleDrawer('inspector'));
         if (toolsClose) toolsClose.addEventListener('click', closeDrawers);
-        if (inspectorClose) inspectorClose.addEventListener('click', closeDrawers);
+        if (inspectorClose) inspectorClose.addEventListener('click', () => {
+            if (Store.isPlayerView()) setPlayerInspectorState('collapsed');
+            else closeDrawers();
+        });
+        if (inspectorExpand) inspectorExpand.addEventListener('click', () => {
+            if (!Store.isPlayerView()) return;
+            setPlayerInspectorState(Store.getInspectorViewState() === 'full' ? 'compact' : 'full');
+        });
         if (backdrop) backdrop.addEventListener('click', closeDrawers);
         document.addEventListener('keydown', event => {
             if (event.key === 'Escape'
@@ -144,10 +163,42 @@ const App = (() => {
         updateDrawerControls();
     }
 
-    function openInspectorDrawer() {
-        document.body.classList.remove('tools-open');
-        document.body.classList.add('inspector-open');
-        updateDrawerControls();
+    /* --- Encart d'inspecteur permanent en vue joueur (E2) ---
+       Trois états portés par `body[data-inspector]` : collapsed (bouton ⓘ seul),
+       compact (aperçu, défaut), full (agrandi). L'état est persisté via Store,
+       comme les autres préférences UI. */
+    function setPlayerInspectorState(state) {
+        Store.setInspectorViewState(state);
+        document.body.dataset.inspector = Store.getInspectorViewState();
+        updatePlayerInspectorControls();
+        updatePlayerInspectorDock();
+    }
+
+    function updatePlayerInspectorControls() {
+        const state = Store.getInspectorViewState();
+        const playerView = Store.isPlayerView();
+        const expand = document.getElementById('inspector-expand');
+        const close = document.getElementById('inspector-close');
+        const playerToggle = document.getElementById('player-inspector-toggle');
+        if (expand) {
+            const full = state === 'full';
+            expand.textContent = full ? '⤡' : '⤢';
+            expand.setAttribute('aria-label', full ? 'Réduire l’aperçu' : 'Agrandir l’aperçu');
+            expand.setAttribute('aria-pressed', full ? 'true' : 'false');
+        }
+        if (close && playerView) close.setAttribute('aria-label', 'Réduire l’inspecteur');
+        if (playerToggle) playerToggle.setAttribute('aria-expanded', state === 'collapsed' ? 'false' : 'true');
+    }
+
+    /* La carte accostée se place au coin haut-droit de la zone carte, juste sous
+       les onglets d'étage : on lit la position réelle du plateau (robuste aux
+       changements d'orientation) et on la passe en variable CSS. */
+    function updatePlayerInspectorDock() {
+        if (!Store.isPlayerView()) return;
+        const wrapper = document.getElementById('map-wrapper');
+        if (!wrapper) return;
+        const top = Math.max(0, Math.round(wrapper.getBoundingClientRect().top));
+        document.body.style.setProperty('--inspector-dock-top', top + 'px');
     }
 
     function toggleDrawer(name) {
@@ -685,6 +736,7 @@ const App = (() => {
                 closeDrawers();
             }
             MapView.render();
+            updatePlayerInspectorDock();
         });
         window.addEventListener('pagehide', Store.handlePageHide);
 
@@ -700,5 +752,5 @@ const App = (() => {
 
     document.addEventListener('DOMContentLoaded', boot);
 
-    return { renderAll, openInspectorDrawer, closeDrawers, isAdmin: () => isAdmin };
+    return { renderAll, closeDrawers, setPlayerInspectorState, isAdmin: () => isAdmin };
 })();

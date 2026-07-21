@@ -86,6 +86,25 @@ test('une transaction de saisie produit une seule entrée annulable', () => {
     assert.equal(Store.getPlan().name, 'Final');
 });
 
+test('l’état de l’encart d’inspecteur se valide et persiste (E2)', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    // Défaut = aperçu (compact).
+    assert.equal(Store.getInspectorViewState(), 'compact');
+    // Transitions valides acceptées.
+    assert.equal(Store.setInspectorViewState('full'), true);
+    assert.equal(Store.getInspectorViewState(), 'full');
+    assert.equal(Store.setInspectorViewState('collapsed'), true);
+    assert.equal(Store.getInspectorViewState(), 'collapsed');
+    // Valeur inconnue rejetée sans changer l'état courant.
+    assert.equal(Store.setInspectorViewState('huge'), false);
+    assert.equal(Store.getInspectorViewState(), 'collapsed');
+    // Persistance : un rechargement relit l'état depuis localStorage.
+    Store.setInspectorViewState('full');
+    Store.load();
+    assert.equal(Store.getInspectorViewState(), 'full');
+});
+
 test('l’historique conserve au plus cinquante actions', () => {
     const { Store } = loadApplicationCore();
     Store.load();

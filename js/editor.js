@@ -832,12 +832,6 @@ const Editor = (() => {
                 Store.endTransaction();
             }
             dragSession = null;
-            // Vue joueur : saisir un pion pour le déplacer ne doit pas ouvrir
-            // son encart d'info (voir Inspector.render, garde `dragging`). Un
-            // simple tap (sans déplacement) reste une consultation → on ouvre.
-            if (Store.isPlayerView() && completed.kind === 'token' && !completed.moved) {
-                Inspector.render({ forceOpen: true });
-            }
         }
         endDragCoalescing();
     }

@@ -12,6 +12,8 @@ const Store = (() => {
     const TOKENS_KEY = 'shadowrunbank_tokens_v1';
     const DISCOVERIES_KEY = 'shadowrunbank_discoveries_v1';
     const OVERLAY_PREFS_KEY = 'shadowrunbank_overlay_preferences_v1';
+    const INSPECTOR_STATE_KEY = 'shadowrunbank_inspector_state_v1';
+    const INSPECTOR_STATES = ['collapsed', 'compact', 'full'];
     const CURRENT_SCHEMA_VERSION = 2;
     const SAVE_DEBOUNCE_MS = 800;
     const HISTORY_LIMIT = 50;
@@ -51,7 +53,9 @@ const Store = (() => {
         overlayPreferences: {
             gm: { coverages: true, networkLinks: true },
             player: { coverages: true, networkLinks: true }
-        }
+        },
+        // Encart d'inspecteur en vue joueur/tablette (E2) : réduit / aperçu / agrandi.
+        inspectorViewState: 'compact'
     };
 
     function uid(prefix) {
@@ -591,6 +595,7 @@ const Store = (() => {
             discoveries = [];
         }
         loadOverlayPreferences();
+        loadInspectorViewState();
         const first = sortedFloors()[0];
         ui.currentFloorId = first ? first.id : null;
         resetHistory();
@@ -625,6 +630,26 @@ const Store = (() => {
         try {
             localStorage.setItem(OVERLAY_PREFS_KEY, JSON.stringify(ui.overlayPreferences));
         } catch (error) { /* le filtre reste actif pour la session */ }
+        return true;
+    }
+
+    function loadInspectorViewState() {
+        try {
+            const stored = localStorage.getItem(INSPECTOR_STATE_KEY);
+            if (INSPECTOR_STATES.includes(stored)) ui.inspectorViewState = stored;
+        } catch (error) { /* préférence locale facultative */ }
+    }
+
+    function getInspectorViewState() {
+        return ui.inspectorViewState;
+    }
+
+    function setInspectorViewState(state) {
+        if (!INSPECTOR_STATES.includes(state)) return false;
+        ui.inspectorViewState = state;
+        try {
+            localStorage.setItem(INSPECTOR_STATE_KEY, state);
+        } catch (error) { /* l'état reste actif pour la session */ }
         return true;
     }
 
@@ -2092,6 +2117,7 @@ const Store = (() => {
         getEffectiveState, setEntityState,
         isDecorAccessController, getAccessController, isAccessOpen,
         getOverlayPreferences, setOverlayVisibility,
+        getInspectorViewState, setInspectorViewState,
         isPlayerView, isDiscovered, isEffectivelyRevealed, isEndpointRevealed, endpointLetter,
         cameraFeedCameras, isCameraFeedRevealed,
         visibleFloors, visibleRooms, visibleEntities, visibleDecors, visibleTokens, visibleTransitions,

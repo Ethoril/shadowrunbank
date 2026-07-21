@@ -1156,32 +1156,90 @@ test('les deux orientations de la tablette cible restent sans débordement', asy
     const page = await context.newPage();
     await page.goto(baseUrl + '/index.html');
     await page.evaluate(() => { Store.ui.readOnly = true; App.renderAll(); });
-    let metrics = await page.evaluate(() => ({
-        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        mapWidth: document.querySelector('#map-wrapper').getBoundingClientRect().width,
-        toggleHeight: document.querySelector('#player-inspector-toggle').getBoundingClientRect().height
-    }));
-    assert.equal(metrics.overflow, 0);
-    assert.ok(metrics.mapWidth > 2200);
-    assert.ok(metrics.toggleHeight >= 44);
-    await page.locator('#player-inspector-toggle').click();
-    assert.equal(await page.evaluate(() => document.body.classList.contains('inspector-open')), true);
-
-    await page.setViewportSize({ width: 1440, height: 2304 });
-    metrics = await page.evaluate(() => {
-        const drawer = document.querySelector('#inspector-panel').getBoundingClientRect();
+    // E2 : encart accosté permanent, par défaut « aperçu » (compact). La carte est
+    // visible au coin haut-droit, le bouton ⓘ est masqué, et il n'y a aucun voile.
+    let metrics = await page.evaluate(() => {
+        const card = document.querySelector('#inspector-panel').getBoundingClientRect();
         return {
             overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-            drawerBottom: Math.round(drawer.bottom),
-            viewportHeight: document.documentElement.clientHeight,
-            drawerWidth: Math.round(drawer.width)
+            mapWidth: document.querySelector('#map-wrapper').getBoundingClientRect().width,
+            state: document.body.dataset.inspector,
+            cardDisplay: getComputedStyle(document.querySelector('#inspector-panel')).display,
+            cardRight: Math.round(card.right),
+            cardLeft: Math.round(card.left),
+            cardBottom: Math.round(card.bottom),
+            toggleDisplay: getComputedStyle(document.querySelector('#player-inspector-toggle')).display,
+            backdropDisplay: getComputedStyle(document.querySelector('#panel-backdrop')).display,
+            viewportWidth: document.documentElement.clientWidth,
+            viewportHeight: document.documentElement.clientHeight
         };
     });
     assert.equal(metrics.overflow, 0);
-    assert.equal(metrics.drawerBottom, metrics.viewportHeight);
-    assert.equal(metrics.drawerWidth, 1440);
+    assert.ok(metrics.mapWidth > 2200);
+    assert.equal(metrics.state, 'compact');
+    assert.notEqual(metrics.cardDisplay, 'none');
+    assert.equal(metrics.toggleDisplay, 'none');           // ⓘ masqué tant que l'encart est ouvert
+    assert.equal(metrics.backdropDisplay, 'none');         // plus de voile en vue joueur
+    assert.ok(metrics.cardLeft > metrics.viewportWidth / 2);          // accosté à droite
+    assert.ok(metrics.viewportWidth - metrics.cardRight < 30);
+    assert.ok(metrics.cardBottom < metrics.viewportHeight);          // n'occupe pas toute la hauteur
+    const compactWidth = metrics.cardRight - metrics.cardLeft;
 
-    await page.evaluate(() => App.closeDrawers());
+    // Sélectionner un élément ne change PAS l'état d'ouverture (contenu en place).
+    await page.evaluate(() => {
+        const room = Store.floorRooms(Store.ui.currentFloorId)[0];
+        if (room) { room.revealed = true; Store.ui.selection = { kind: 'room', id: room.id }; }
+        App.renderAll();
+    });
+    assert.equal(await page.evaluate(() => document.body.dataset.inspector), 'compact');
+
+    // Agrandir : la carte s'élargit. Réduire (×) : seul le bouton ⓘ reste, en haut à droite.
+    await page.locator('#inspector-expand').click();
+    metrics = await page.evaluate(() => {
+        const card = document.querySelector('#inspector-panel').getBoundingClientRect();
+        return { state: document.body.dataset.inspector, cardWidth: Math.round(card.width) };
+    });
+    assert.equal(metrics.state, 'full');
+    assert.ok(metrics.cardWidth > compactWidth);
+
+    await page.locator('#inspector-close').click();
+    metrics = await page.evaluate(() => {
+        const toggle = document.querySelector('#player-inspector-toggle').getBoundingClientRect();
+        return {
+            state: document.body.dataset.inspector,
+            cardDisplay: getComputedStyle(document.querySelector('#inspector-panel')).display,
+            toggleDisplay: getComputedStyle(document.querySelector('#player-inspector-toggle')).display,
+            toggleHeight: Math.round(toggle.height),
+            toggleRight: Math.round(toggle.right),
+            viewportWidth: document.documentElement.clientWidth
+        };
+    });
+    assert.equal(metrics.state, 'collapsed');
+    assert.equal(metrics.cardDisplay, 'none');
+    assert.notEqual(metrics.toggleDisplay, 'none');
+    assert.ok(metrics.toggleHeight >= 44);
+    assert.ok(metrics.viewportWidth - metrics.toggleRight < 30);
+
+    // Rouvrir en aperçu via ⓘ.
+    await page.locator('#player-inspector-toggle').click();
+    assert.equal(await page.evaluate(() => document.body.dataset.inspector), 'compact');
+
+    // Portrait : l'encart reste accosté (pas de tiroir bas), toujours sans débordement.
+    await page.setViewportSize({ width: 1440, height: 2304 });
+    metrics = await page.evaluate(() => {
+        const card = document.querySelector('#inspector-panel').getBoundingClientRect();
+        return {
+            overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            cardTop: Math.round(card.top),
+            cardBottom: Math.round(card.bottom),
+            viewportHeight: document.documentElement.clientHeight
+        };
+    });
+    assert.equal(metrics.overflow, 0);
+    assert.ok(metrics.cardTop < metrics.viewportHeight / 2);          // accosté en haut, pas en bas
+    assert.ok(metrics.cardBottom < metrics.viewportHeight);
+
+    await page.evaluate(() => App.setPlayerInspectorState('collapsed'));
     await page.setViewportSize({ width: 1024, height: 768 });
     metrics = await page.evaluate(() => ({
         overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
