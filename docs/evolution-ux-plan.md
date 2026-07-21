@@ -394,13 +394,23 @@ sert de patron au perçage), `index.html` (`#move-zone-layer`), `css/style.css` 
 - Convention repo : `?v=` tamponnés par le build (pas de bump manuel) ; compléter le journal
   `development_plan_v2.md` (une ligne par changement + commit de renseignement du hash).
 
+## Avancement
+
+- **E1 — livré** (2026-07-21) : commit `f10ceec`, hash journal `47a19f6`. Remplissage retenu = blanc
+  léger 5 % (décision utilisateur).
+- **E2 — livré** (2026-07-21) : commit `20e08e4`, hash journal `bd7b010`. Contrôles retenus = deux boutons
+  distincts (⤢/⤡ agrandir-rétrécir + × réaffecté à « réduire »).
+- **E3 — non commencé** : chantier majeur, à faire dans une session dédiée (sous-lots a→f, cf. « Ordre
+  recommandé »).
+
 ## Points encore ouverts (mineurs, à trancher au fil de l'eau)
 
-- **E1** : remplissage des pièces révélées à alpha nul, ou très léger blanc (5 %) ? — au réglage visuel.
-- **E2** : les contrôles réduire/agrandir en un seul bouton cyclique, ou deux boutons distincts (chevron +
-  `⤢`) ? — à l'ergonomie tablette.
-- **E3** : les **cases hors de toute pièce** (couloir non zoné) n'ont pas d'arête de zonage → librement
-  traversables. À confirmer que c'est voulu (sinon : zoner ces couloirs comme pièces, ou ajouter des murs-
-  décors internes). Comportement d'une **porte simple sans maglock** : considérée passante par défaut
-  (une porte verrouillée = maglock `active` bloque) — à confirmer. Animation de glissement du pion : v1
-  instantanée, polish ultérieur ?
+- **E1 — tranché** : remplissage des pièces révélées à **5 % de blanc** (léger voile).
+- **E2 — tranché** : **deux boutons distincts** (⤢/⤡ + × « réduire »), pas de bouton cyclique unique.
+- **E3 — tranchés (2026-07-21)** :
+  - Les **cases hors de toute pièce** (couloir non zoné) sont **librement traversables** (pas d'arête de
+    zonage) — comportement voulu, confirmé.
+  - Une **porte simple sans maglock** est **passante par défaut** (ouvrable à la main) ; seule une porte
+    **verrouillée** (maglock `active`) bloque — confirmé.
+- **E3 — reste ouvert** : animation de glissement du pion vers la case cible — v1 instantanée, polish
+  ultérieur ?
