@@ -1,9 +1,9 @@
 name: Tests
 
+# Les push sur main sont testés puis déployés par deploy-pages.yml ; ici on ne
+# garde que la validation des pull requests pour éviter de lancer la suite deux fois.
 on:
   pull_request:
-  push:
-    branches: [main]
 
 jobs:
   test:
