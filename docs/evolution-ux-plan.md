@@ -400,7 +400,7 @@ sert de patron au perçage), `index.html` (`#move-zone-layer`), `css/style.css` 
   léger 5 % (décision utilisateur).
 - **E2 — livré** (2026-07-21) : commit `20e08e4`, hash journal `bd7b010`. Contrôles retenus = deux boutons
   distincts (⤢/⤡ agrandir-rétrécir + × réaffecté à « réduire »).
-- **E3 — livré** (2026-07-21) : commit `À renseigner`. Sous-lots a→f réalisés. Écarts assumés vs. plan
+- **E3 — livré** (2026-07-21) : commit `7ed0715`. Sous-lots a→f réalisés. Écarts assumés vs. plan
   initial : (1) seuls le **zonage** et les **portes** agissent sur les arêtes ; tout autre décor bloquant
   (vitre, grille, pilier, mobilier) bloque des **cases** (pas d'arêtes de décor fin) — conforme à la
   section « modèle d'obstacles » du plan et à ses tests unitaires. (2) Les **cabines d'ascenseur ne
