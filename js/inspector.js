@@ -703,7 +703,8 @@ const Inspector = (() => {
         const type = document.createElement('span');
         type.className = 'ins-type-badge';
         type.textContent = 'PIÈCE';
-        type.style.color = `hsl(${room.hue}, 80%, 65%)`;
+        // Pièces épurées (E1) : plus de teinte par pièce, badge en gris neutre.
+        type.style.color = `rgb(200,205,210)`;
         body.appendChild(field('Type :', type));
         appendDiscoveryOrigin(body, 'room', room);
 
