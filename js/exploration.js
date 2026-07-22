@@ -106,6 +106,20 @@ const Exploration = (() => {
                 discovered.push({ kind: 'endpoint', id: cabin.endpoint.id });
             }
         });
+        // Les liaisons « à vue » (escalier, échelle, passage) sont révélées
+        // dès qu'on entre dans la pièce qui les contient. Les ascenseurs le
+        // sont via leurs cabines (voir plus haut) ; les trappes, dissimulées,
+        // restent à découvrir.
+        const VISIBLE_ON_ENTRY = new Set(['stairs', 'ladder', 'passage']);
+        Store.getPlan().transitions.forEach(transition => {
+            if (!VISIBLE_ON_ENTRY.has(transition.type)) return;
+            transition.endpoints.forEach(endpoint => {
+                if (endpoint.floorId !== token.floorId || !inSameRoom(endpoint, room)) return;
+                if (Store.addDiscovery('endpoint', endpoint, token.id, token.floorId)) {
+                    discovered.push({ kind: 'endpoint', id: endpoint.id });
+                }
+            });
+        });
         return discovered;
     }
 
