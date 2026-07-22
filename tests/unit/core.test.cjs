@@ -272,6 +272,8 @@ test('une caméra piratée ouvre temporairement sa pièce et montre seulement so
     const hiddenDecor = Store.addDecor('floor_marking', floor.id, 5, 9.5);
     const transition = Store.addTransition('stairs', 'Escalier filmé');
     Store.addTransitionEndpoint(transition, floor.id, 10, 7);
+    const hatch = Store.addTransition('hatch', 'Trappe filmée');
+    Store.addTransitionEndpoint(hatch, floor.id, 10, 7);
 
     const snapshot = MapView.cameraFeedSnapshot(floor.id, 0);
     assert.ok(Store.isEffectivelyRevealed(floor, 'floor'));
@@ -282,6 +284,7 @@ test('une caméra piratée ouvre temporairement sa pièce et montre seulement so
     assert.ok(snapshot.decorIds.includes(visibleDecor.id));
     assert.ok(!snapshot.decorIds.includes(hiddenDecor.id));
     assert.ok(snapshot.transitionIds.includes(transition.id));
+    assert.ok(!snapshot.transitionIds.includes(hatch.id), 'les flux caméra ne doivent pas dévoiler les trappes');
 
     camera.state = 'active';
     assert.ok(!Store.isEffectivelyRevealed(floor, 'floor'));
@@ -808,6 +811,14 @@ test('entrer dans une salle révèle les catégories évidentes et garde les aut
         Store.addDecor(type, floor.id, 5, 7));
     const elevator = Store.addTransition('elevator', 'Ascenseur adjacent');
     Store.addTransitionEndpoint(elevator, floor.id, 5, 4);
+    const stairs = Store.addTransition('stairs', 'Escalier dans la salle');
+    const stairsEp = Store.addTransitionEndpoint(stairs, floor.id, 5, 7);
+    const ladder = Store.addTransition('ladder', 'Échelle dans la salle');
+    const ladderEp = Store.addTransitionEndpoint(ladder, floor.id, 5, 7);
+    const passage = Store.addTransition('passage', 'Passage dans la salle');
+    const passageEp = Store.addTransitionEndpoint(passage, floor.id, 5, 7);
+    const hatch = Store.addTransition('hatch', 'Trappe dans la salle');
+    const hatchEp = Store.addTransitionEndpoint(hatch, floor.id, 5, 7);
     const doorlessElevator = Store.addTransition('elevator', 'Gaine sans porte');
     const doorlessEndpoint = Store.addTransitionEndpoint(doorlessElevator, floor.id, 7, 4);
     doorlessEndpoint.hasDoor = false;
@@ -834,10 +845,18 @@ test('entrer dans une salle révèle les catégories évidentes et garde les aut
     decors.forEach(decor => {
         assert.equal(Store.isDiscovered('decor', decor.id), true, decor.type);
     });
-    // La découverte d'une cabine est par point de passage : seul l'arrêt
-    // de l'étage visité devient visible.
+    // La découverte d'une liaison à vue (cabine, escalier, échelle, passage)
+    // est par point de passage : seul l'arrêt de l'étage visité devient visible.
     assert.equal(Store.isEndpointRevealed(elevator, elevator.endpoints[0]), true,
         'la porte sud touche la salle découverte');
+    assert.equal(Store.isEndpointRevealed(stairs, stairsEp), true,
+        'l’escalier situé dans la pièce est révélé automatiquement');
+    assert.equal(Store.isEndpointRevealed(ladder, ladderEp), true,
+        'l’échelle située dans la pièce est révélée automatiquement');
+    assert.equal(Store.isEndpointRevealed(passage, passageEp), true,
+        'le passage situé dans la pièce est révélé automatiquement');
+    assert.equal(Store.isEndpointRevealed(hatch, hatchEp), false,
+        'une trappe dissimulée reste cachée même dans la pièce visitée');
     assert.equal(Store.isEffectivelyRevealed(doorlessElevator, 'transition'), false,
         'une gaine sans porte reste cachée');
     assert.equal(Store.isEffectivelyRevealed(remoteElevator, 'transition'), false,

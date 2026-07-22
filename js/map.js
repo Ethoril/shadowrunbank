@@ -600,6 +600,7 @@ const MapView = (() => {
                 if (polygonsIntersect(target, polygon)) decorIds.add(decor.id);
             });
             Store.getPlan().transitions.forEach(transition => {
+                if (transition.type === 'hatch') return;
                 if (transition.endpoints.some(endpoint => endpoint.floorId === floorId
                     && pointInPolygon([endpoint.x, endpoint.y], polygon))) {
                     transitionIds.add(transition.id);
