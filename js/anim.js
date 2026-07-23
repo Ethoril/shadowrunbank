@@ -155,8 +155,14 @@ const Anim = (() => {
         }
         if (moved) MapView.renderCables(now);
         if ((moved || needCoverages) && now - lastVisualAt > 33) { // ~30 fps pour le rendu
-            const feedChanged = MapView.updateCameraFeedVisibility(now);
-            if (needCoverages && !feedChanged) MapView.renderCoverages(now);
+            // Le flux caméra (rooms/décors/entités/transitions) et la géométrie
+            // des cônes sont deux rendus indépendants : updateCameraFeedVisibility
+            // ne redessine pas les couvertures. Les sauter quand le flux change —
+            // ce qui arrive pile quand un bord de cône franchit un obstacle — fige
+            // le cône une frame puis le fait sauter (bords « clignotants »). On
+            // lance donc toujours les deux.
+            MapView.updateCameraFeedVisibility(now);
+            if (needCoverages) MapView.renderCoverages(now);
             lastVisualAt = now;
         }
         if (animated.length && canSchedule()) rafId = requestAnimationFrame(tick);
