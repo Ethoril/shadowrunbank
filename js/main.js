@@ -573,6 +573,17 @@ const App = (() => {
 
         remoteExists = true;
         collectionBootstrapAllowed = remote.schemaVersion !== 2;
+
+        // Sauvegarde en vol : ignorer les échos distants. Firestore confirme
+        // notre propre écriture via onSnapshot (hasPendingWrites=false) par un
+        // chemin async indépendant de la résolution de runTransaction ; cet écho
+        // peut arriver AVANT que saveNow n'ait mis à jour plan.revision. On
+        // verrait alors notre nouvelle révision « distante » face à notre
+        // révision locale encore périmée → faux « conflit ». Une vraie écriture
+        // concurrente pendant notre transaction est, elle, détectée par la
+        // transaction optimiste (relecture + revision-conflict), pas ici.
+        if (isAdmin && Store.isSaveInFlight()) return;
+
         let normalizedRemote;
         try {
             normalizedRemote = Store.preparePlan(remote).plan;
