@@ -664,6 +664,7 @@ const Store = (() => {
         if (!el) return;
         el.className = status;
         el.textContent = text;
+        el.title = text; // largeur figée : le survol révèle un texte tronqué
     }
 
     function notifyHistoryChange() {
