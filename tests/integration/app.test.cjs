@@ -615,7 +615,9 @@ test('une caméra piratée affiche un flux limité à son cône dans la vue joue
 
     assert.equal(await page.evaluate(() => Store.currentFloor().id), ids.floor);
     assert.equal(await page.locator(`.room-label[data-room-id="${ids.room}"]`).count(), 1);
-    assert.equal(await page.locator(`.entity[data-id="${ids.camera}"]`).count(), 0);
+    // La caméra qui alimente le flux (via le nœud piraté) apparaît elle-même aux
+    // joueurs : ils doivent savoir d'où vient la zone surveillée révélée.
+    assert.equal(await page.locator(`.entity[data-id="${ids.camera}"]`).count(), 1);
     assert.equal(await page.locator(`.entity[data-id="${ids.inside}"]`).count(), 1);
     assert.equal(await page.locator(`.entity[data-id="${ids.outside}"]`).count(), 0);
     assert.equal(await page.locator(`.decor[data-id="${ids.decor}"]`).count(), 1);
@@ -627,6 +629,8 @@ test('une caméra piratée affiche un flux limité à son cône dans la vue joue
     }, ids.node);
     assert.notEqual(await page.evaluate(() => Store.currentFloor().id), ids.floor);
     assert.equal(await page.locator(`.entity[data-id="${ids.inside}"]`).count(), 0);
+    // Flux coupé (nœud réactivé) : la caméra source n'est plus dévoilée non plus.
+    assert.equal(await page.locator(`.entity[data-id="${ids.camera}"]`).count(), 0);
     await context.close();
 });
 
