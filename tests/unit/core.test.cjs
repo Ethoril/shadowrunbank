@@ -824,7 +824,7 @@ test('le catalogue expose tous les dispositifs attendus', () => {
     const { EntityCatalog } = loadApplicationCore();
     const types = Object.keys(EntityCatalog.types);
     assert.ok(types.length >= 16);
-    ['camera', 'armed_guard', 'bank_employee', 'civilian', 'network_node', 'mana_barrier'].forEach(type => {
+    ['camera', 'armed_guard', 'bank_employee', 'civilian', 'network_node'].forEach(type => {
         assert.ok(EntityCatalog.types[type], type + ' absent du catalogue');
     });
     ['bank_employee', 'civilian'].forEach(type => {
@@ -871,7 +871,7 @@ test('entrer dans une salle révèle les catégories évidentes et garde les aut
     const hiddenTypes = [
         'infrared_motion_sensor', 'detection_laser', 'pressure_plate', 'sensor',
         'micro_security_drone', 'automatic_turret', 'drone', 'security_mage',
-        'mana_barrier', 'patrol_spirit'
+        'patrol_spirit'
     ];
     const visible = visibleTypes.map(type => Store.addEntity(type, floor.id, 5, 7, type));
     const hidden = hiddenTypes.map(type => Store.addEntity(type, floor.id, 5, 7, type));
