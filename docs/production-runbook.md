@@ -1,10 +1,12 @@
 # Runbook de migration et déploiement v2
 
-La migration Firestore et le workflow de déploiement applicatif sont volontairement manuels.
+La migration Firestore reste volontairement manuelle (voir §2). Le déploiement applicatif, lui,
+est automatique depuis le 21 juillet 2026.
 
-> **État du dépôt au 2026-07-16 :** la source GitHub Pages est configurée sur **GitHub Actions**.
-> Les poussées sur `main` ne publient plus automatiquement le site ; le workflow manuel ci-dessous
-> est l’unique voie de publication.
+> **État du dépôt au 2026-07-23 :** la source GitHub Pages est configurée sur **GitHub Actions**.
+> Tout push sur `main` déclenche le workflow **Déploiement GitHub Pages**
+> (`.github/workflows/deploy-pages.yml`) : suite de tests, puis build et publication si elle passe.
+> Le déclenchement manuel (`workflow_dispatch`) reste disponible pour republier sans nouveau commit.
 
 ## 1. Préparation
 
@@ -27,18 +29,21 @@ La migration Firestore et le workflow de déploiement applicatif sont volontaire
 6. Vérifier les pions, transitions et collections de découvertes séparément.
 7. En cas d’écart, ne pas poursuivre : restaurer l’export JSON ou le champ `plan` du snapshot pre-v2.
 
-## 3. Déploiement progressif
+## 3. Déploiement
 
-1. Fusionner la révision candidate seulement après réussite du workflow **Tests**.
-2. Dans GitHub Actions, lancer **Déploiement progressif GitHub Pages** manuellement.
-3. Saisir exactement `DEPLOY`. Le workflow rejoue tous les tests avant de publier `_site`.
-4. Tester d’abord le mode joueur sans connexion, puis le mode MJ sur MacBook.
-5. Tester la tablette physique 2304×1440 : drag d’un pion, transition d’étage et tiroir d’informations.
-6. Garder l’ancien export et le snapshot jusqu’à la fin de la session de jeu suivante.
+1. Fusionner la révision candidate sur `main` seulement après réussite du workflow **Tests** (pull
+   request).
+2. Le push sur `main` déclenche automatiquement **Déploiement GitHub Pages** : il rejoue toute la
+   suite de tests puis publie `_site` si elle passe, sans confirmation supplémentaire.
+3. Tester d’abord le mode joueur sans connexion, puis le mode MJ sur MacBook.
+4. Tester la tablette physique 2304×1440 : drag d’un pion, transition d’étage et tiroir d’informations.
+5. Garder l’ancien export et le snapshot jusqu’à la fin de la session de jeu suivante.
 
 ## 4. Retour arrière
 
-1. Republier la dernière révision Git connue comme stable via le workflow manuel.
+1. Republier la dernière révision Git connue comme stable : `git revert` puis push sur `main`
+   (redéclenche le déploiement automatique), ou lancer manuellement le workflow sur cette révision
+   (`workflow_dispatch`).
 2. Si les données ont été altérées, importer le JSON pre-v2 depuis le mode MJ.
 3. Si l’import local est impossible, recopier dans `plans/main` le champ `plan` du snapshot Firestore.
 4. Vérifier la révision et recharger un écran joueur avant de rouvrir l’édition.

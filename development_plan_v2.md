@@ -588,7 +588,7 @@ Contrôles MJ :
 - [x] Le changement d'étage place le pion au bon endpoint
 - [x] La tablette affiche automatiquement l'étage d'arrivée
 - [x] L'étage et la salle d'arrivée sont révélés si nécessaire
-- [ ] Entrer dans une salle cachée la révèle sur tous les écrans — à valider après déploiement des règles
+- [x] Entrer dans une salle cachée la révèle sur tous les écrans — validé en conditions réelles le 2026-07-23
 - [x] Une caméra visible dans la salle est découverte
 - [x] Un garde masqué par un décor opaque reste caché
 - [x] Une caméra découverte ne révèle pas automatiquement son cône
@@ -979,7 +979,7 @@ Travaux :
 - [x] Prendre en charge `dvh` et les zones sûres de la tablette lorsque le navigateur les expose
 - [x] Vérifier clavier/souris et interactions de tiroir par tests automatisés
 - [x] Tester les gestes tactiles automatisés sur pion et transition
-- [ ] Confirmer les gestes tactiles sur la tablette physique
+- [x] Confirmer les gestes tactiles sur la tablette physique — validé le 2026-07-23
 - [x] Conserver explicitement les smartphones hors périmètre de finition
 
 **Critère de sortie :** aucune commande essentielle ne se chevauche ou ne sort de l'écran,
@@ -1229,7 +1229,7 @@ Durée indicative : 1 à 2 jours.
 - [x] Adaptation des panneaux Versions et Conflit
 - [x] Tests automatisés souris et clavier aux dimensions cibles
 - [x] Tests automatisés de gestes tactiles avec verrouillage, drag et changement d'étage
-- [ ] Validation tactile sur la tablette physique
+- [x] Validation tactile sur la tablette physique — validé le 2026-07-23
 - [x] Contrôle visuel des deux modes sans débordement ni chevauchement
 
 **Critère de sortie :** l'application est soignée sur ordinateur et tablette dans les deux
@@ -1242,8 +1242,8 @@ Durée indicative : 2 jours.
 - [x] Tests unitaires
 - [x] Tests d'intégration
 - [x] Simulation automatisée d'un conflit entre deux clients
-- [ ] Test réel MacBook et tablette
-- [ ] Test de conflit entre deux machines
+- [x] Test réel MacBook et tablette — validé le 2026-07-23
+- [x] Test de conflit entre deux machines — validé le 2026-07-23
 - [x] Migration du plan Firestore
 - [x] Déploiement de la v2 et des règles Firestore
 
@@ -1338,7 +1338,7 @@ Pour chaque type :
 - [x] Outils et inspecteur utilisables en tiroirs
 - [x] Panneaux Versions et Conflit sans débordement
 - [x] Hauteur correcte avec viewport dynamique
-- [ ] Validation sur la tablette physique
+- [x] Validation sur la tablette physique — validé le 2026-07-23
 - [x] Manipulation tactile automatisée dans Chromium
 - [x] Drag tactile des pions verrouillé puis autorisé
 - [x] Changement d'étage par endpoint avec confirmation
@@ -1446,3 +1446,4 @@ cas particuliers et gardera le projet simple à maintenir.
 | 2026-07-21 | Évolution UX (E1) | Plan `docs/evolution-ux-plan.md`, point E1 « Pièces épurées » : les pièces perdent leur teinte par `hue` au rendu (contours de murs blancs `rgba(255,255,255,…)` — épaisseur 2px, plein révélé / pointillé caché, surbrillance à la sélection conservées) et leur remplissage devient un blanc quasi nul (5 % révélé, 3 % caché, 10 % sélection) juste suffisant pour lire sélection et « caché ». Libellé de pièce en blanc cassé, badge « PIÈCE » de l’inspecteur et pastille de l’arbre de visibilité passés en gris neutre. Décors (mur/porte/vitre/mobilier) inchangés, gardent leurs couleurs. Aucune migration : le champ `hue` reste en donnée, simplement ignoré au rendu. Tests 40/40 unitaires + 19/19 intégration Playwright verts | `f10ceec` |
 | 2026-07-21 | Évolution UX (E2) | Plan `docs/evolution-ux-plan.md`, point E2 « Inspecteur permanent » (vue joueur / tablette). L’inspecteur joueur passe du tiroir en surimpression à un **encart accosté permanent** au coin haut-droit de la carte, à trois états portés par `body[data-inspector]` : `collapsed` (bouton « ⓘ Infos » seul), `compact` (aperçu, défaut) et `full` (agrandi). **La sélection ne change plus l’état d’ouverture** : `Inspector.render()` ne fait que (re)remplir le contenu en place (retrait de la branche d’auto-ouverture `openPlayerDrawer` et du `forceOpen` du tap pion dans `editor.js`). **Plus de voile** en vue joueur (`#panel-backdrop` masqué ; le voile reste réservé au tiroir Outils MJ-tablette). En-tête de carte : bouton agrandir/rétrécir (⤢/⤡) et × réaffecté à « réduire ». État persisté en localStorage via `Store.get/setInspectorViewState` (mêmes patrons que les préférences d’overlay). Position calée sous les onglets d’étage via `--inspector-dock-top` (lu depuis `#map-wrapper`, robuste à l’orientation). MJ bureau (colonne permanente) et tiroirs MJ-tablette inchangés. Test unitaire de l’état (défaut/validation/persistance) + test d’intégration tablette réécrit (encart accosté, ⓘ masqué quand ouvert, cycle réduit/aperçu/agrandi, aucun voile, sélection sans réouverture, portrait accosté). Tests 41/41 unitaires + 19/19 intégration verts | `20e08e4` |
 | 2026-07-21 | Évolution UX (E3) | Plan `docs/evolution-ux-plan.md`, point E3 « Déplacement par zone de portée ». **Donnée** : nouveau champ `movementRange` par pion (défaut 6, entier borné 0-40, dans `normalizeToken`/`addToken`/`duplicateToken`), éditable côté MJ dans l’inspecteur pion (« Portée de déplacement (cases) ») ; aucune migration (pions existants normalisés à 6), aucune règle cloud à changer (champ de config écrit par le MJ). **Carte d’obstacles** (`map.js`, `computeBlockedEdges`, mémorisée par étage au jeton occulteurs) : le zonage des pièces fait mur (arêtes unitaires extraites via `computeWallEdges`, refactor commun avec `computeWalls`) ; une porte/ouverture à cheval **perce** l’arête si franchissable (`opening` toujours, `opaque_door` sans maglock ou verrou non-actif via `isAccessOpen`), une porte verrouillée la laisse bloquée ; tout autre décor bloquant (vitre, grille, pilier, mobilier) rend non-entrables les cases de son empreinte (centre dans le rectangle). Clé d’arête `H:L:c` / `V:L:r`. Les cabines d’ascenseur ne bloquent PAS de case (boardables — sinon le point de passage serait inatteignable). **Zone atteignable** (`reachableCells`, Dijkstra 8-connexe borné, coût 1 orthogonal / 1,5 diagonal ≤ portée, anti-coupe d’angle : une diagonale exige ses deux arêtes orthogonales ouvertes ; mémoïsée par pion/case/portée/jeton). **Rendu** : nouvelle couche `#move-zone-layer` (sous les pions, au-dessus des pièces), cases teintées à la couleur du pion, non interactive ; peuplée pour le pion sélectionné en vue joueur (mobile) et en repère MJ. **Interaction** : en vue joueur le drag de pion est supprimé (`onTokenPointerDown` sélectionne seulement) ; cliquer une case atteignable déplace le pion à son centre (`moveTokenToCell` → `commitTokenPosition` + `Exploration.handleTokenRelease`), un clic hors zone désélectionne ; taper un point de passage à portée déplace le pion dessus puis ouvre la modale de transition (`onTransitionPointerDown`). Le MJ garde le drag libre et voit la zone en repère. Hors périmètre v1 : inter-étages via la zone (mono-étage), terrain variable. 6 tests unitaires E3 (portée par défaut, zonage=mur, perçage porte simple/verrouillée/piratée, case bloquée, portée octile bornée + réduction, anti-coupe d’angle) ; 2 tests d’intégration adaptés (drag joueur inopérant + clic-pour-déplacer ; embarquement transition par clic). Tests 47/47 unitaires + 19/19 intégration verts | `7ed0715` |
+| 2026-07-23 | Documentation / validation finale | Revue de l'état du projet. (1) `README.md` et `docs/production-runbook.md` décrivaient encore l'ancien déploiement manuel (`workflow_dispatch` + saisie « DEPLOY »), alors que `2eb16f4` (2026-07-21) l'a rendu automatique sur push `main` — les deux documents sont mis à jour pour refléter le workflow réel. (2) Dernières cases physiques du plan (§7.7 révélation multi-écrans, §12.3/§14/§15.7 gestes tactiles et conflit deux machines) cochées : validées en conditions réelles (tablette + MacBook). Aucun changement de code. | À renseigner |
