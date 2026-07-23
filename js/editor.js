@@ -1160,7 +1160,7 @@ const Editor = (() => {
 
     function setTicker(text) {
         const el = document.getElementById('status-ticker');
-        if (el) el.textContent = text;
+        if (el) { el.textContent = text; el.title = text; } // largeur figée : survol = texte complet
     }
 
     return { setTool, renderTools, renderTabs, switchFloor, wireBoard, wireKeyboard,

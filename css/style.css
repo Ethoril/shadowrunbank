@@ -57,7 +57,18 @@ h1 { margin: 0; min-width: 0; font-size: 1.5rem; text-transform: uppercase; lett
 
 .header-right { display: flex; min-width: 0; align-items: center; gap: 20px; }
 
-#save-status { color: var(--text-muted); font-size: 0.85rem; }
+/* Largeur figée + troncature : le texte de statut (longueur variable au fil
+   des sauvegardes) ne doit jamais changer l'encombrement du header, sinon la
+   barre wrappe sur une ligne de plus et décale toute l'interface. */
+#save-status {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    flex: 0 0 auto;
+    width: 24ch;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 #save-status.dirty { color: var(--warning); }
 #save-status.saving { color: var(--warning); }
 #save-status.saved { color: var(--success); }
@@ -65,7 +76,16 @@ h1 { margin: 0; min-width: 0; font-size: 1.5rem; text-transform: uppercase; lett
 #save-status.offline { color: var(--warning); }
 #save-status.conflict { color: var(--danger); font-weight: bold; }
 
-#status-ticker { color: var(--success); }
+/* Même logique que #save-status : le ticker change de message à chaque action
+   (longueur très variable), on fige son encombrement pour ne pas décaler le header. */
+#status-ticker {
+    color: var(--success);
+    flex: 0 0 auto;
+    width: 32ch;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
 
 /* --- Indicateur de build (version.js) --- */
 #app-version {
