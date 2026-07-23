@@ -412,22 +412,70 @@ const MapView = (() => {
         return null;
     }
 
-    /* Polygone de visibilité du cône par échantillonnage angulaire.
-       Angles en degrés : 0 = est, 90 = sud. Retour en coordonnées grille. */
+    /* Distance du premier mur touché par le rayon d'angle absolu `a`, bornée à
+       `range`. Brique de base du découpage des cônes/faisceaux. */
+    function castRay(cx, cy, a, range, wallSegs) {
+        const dx = Math.cos(a), dy = Math.sin(a);
+        let t = range;
+        for (const w of wallSegs) {
+            const hit = raySegment(cx, cy, dx, dy, w);
+            if (hit !== null && hit < t) t = hit;
+        }
+        return t;
+    }
+
+    /* Polygone de visibilité du cône. Angles en degrés : 0 = est, 90 = sud.
+       Retour en coordonnées grille.
+
+       Échantillonnage angulaire régulier (le corps des murs) COMPLÉTÉ par un
+       rayon vers chaque coin d'occulteur situé dans le cône, doublé d'un rayon
+       de part et d'autre (±EPS). Sans ces rayons de coin, un cône qui balaie
+       voyait le rayon régulier le plus proche d'une arête basculer d'une frame
+       à l'autre entre « touche l'obstacle » (court) et « le manque » (pleine
+       portée) : un pic apparaissait/disparaissait sur le bord (clignotement).
+       Les rayons de coin épinglent la silhouette exacte, stable quel que soit
+       le cap ; les rayons réguliers, eux, glissent le long du mur sans à-coup. */
     function conePolygon(cx, cy, dirDeg, angleDeg, range, wallSegs) {
+        const EPS = 5e-4; // ~0,03° : encadre chaque coin sans le chevaucher
+        const center = dirDeg * Math.PI / 180;
+        const half = angleDeg * Math.PI / 180 / 2;
+        const startA = center - half;
+        const span = 2 * half;
+
         const steps = Math.max(16, Math.ceil(angleDeg / 2)); // ~1 rayon / 2°
-        const startA = (dirDeg - angleDeg / 2) * Math.PI / 180;
-        const stepA = (angleDeg * Math.PI / 180) / steps;
-        const pts = [[cx, cy]];
-        for (let i = 0; i <= steps; i++) {
-            const a = startA + i * stepA;
-            const dx = Math.cos(a), dy = Math.sin(a);
-            let t = range;
-            for (const w of wallSegs) {
-                const hit = raySegment(cx, cy, dx, dy, w);
-                if (hit !== null && hit < t) t = hit;
+        const angles = [];
+        for (let i = 0; i <= steps; i++) angles.push(startA + (span * i) / steps);
+
+        // Rayons vers les coins d'occulteurs à portée et dans l'ouverture.
+        const range2 = range * range;
+        for (const w of wallSegs) {
+            for (let e = 0; e < 2; e += 1) {
+                const ex = e ? w.x2 : w.x1, ey = e ? w.y2 : w.y1;
+                const ddx = ex - cx, ddy = ey - cy;
+                if (ddx * ddx + ddy * ddy > range2) continue;
+                let d = Math.atan2(ddy, ddx) - center;
+                while (d > Math.PI) d -= 2 * Math.PI;
+                while (d < -Math.PI) d += 2 * Math.PI;
+                if (Math.abs(d) > half + EPS) continue;
+                const a = center + d;
+                angles.push(a - EPS, a, a + EPS);
             }
-            pts.push([cx + dx * t, cy + dy * t]);
+        }
+
+        // Tri par écart angulaire depuis le bord d'attaque : chaque sommet étant
+        // le premier contact de son rayon, le polygone reste en étoile (simple).
+        const offset = a => {
+            let d = a - startA;
+            while (d < 0) d += 2 * Math.PI;
+            while (d >= 2 * Math.PI) d -= 2 * Math.PI;
+            return d;
+        };
+        angles.sort((p, q) => offset(p) - offset(q));
+
+        const pts = [[cx, cy]];
+        for (const a of angles) {
+            const t = castRay(cx, cy, a, range, wallSegs);
+            pts.push([cx + Math.cos(a) * t, cy + Math.sin(a) * t]);
         }
         return pts;
     }
