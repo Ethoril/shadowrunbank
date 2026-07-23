@@ -272,7 +272,7 @@ test('la suite smoke complète passe dans un vrai navigateur', async () => {
     await page.goto(baseUrl + '/test_smoke.html');
     await page.waitForFunction(() => document.querySelector('#test-results').textContent.includes('PASS'));
     const results = await page.locator('#test-results').innerText();
-    assert.equal(results.split('\n').filter(line => line.startsWith('PASS')).length, 200);
+    assert.equal(results.split('\n').filter(line => line.startsWith('PASS')).length, 198);
     assert.equal(results.includes('FAIL'), false);
     assert.equal(results.includes('ERROR'), false);
     await context.close();

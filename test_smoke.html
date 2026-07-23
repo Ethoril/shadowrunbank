@@ -126,7 +126,7 @@
                 && EntityCatalog.entries().length >= 19
                 && EntityCatalog.get('armed_guard').canPatrol
                 && EntityCatalog.get('camera').coverageChannel === 'optical'
-                && EntityCatalog.get('mana_barrier').blocksVision.includes('astral'));
+                && DecorCatalog.get('mana_barrier').blocksVision.includes('astral'));
 
             const legacyTypesPlan = Store.createDefaultPlan();
             legacyTypesPlan.schemaVersion = 1;
@@ -134,14 +134,13 @@
             const legacyFloorId = legacyTypesPlan.floors[0].id;
             legacyTypesPlan.entities = [
                 { id: 'legacy_turret', floorId: legacyFloorId, type: 'turret', name: 'T', state: 'active', networkId: '', x: 1, y: 1, revealed: false, note: '', patrol: null, vision: null },
-                { id: 'legacy_barrier', floorId: legacyFloorId, type: 'barrier', name: 'B', state: 'active', networkId: '', x: 2, y: 2, revealed: false, note: '', patrol: null, vision: null },
                 { id: 'legacy_guard', floorId: legacyFloorId, type: 'guard', name: 'G', state: 'active', networkId: '', x: 3, y: 3, revealed: false, note: 'secret', patrol: null, vision: null }
             ];
             const migratedLegacyTypes = Store.preparePlan(legacyTypesPlan).plan.entities;
             check('migration : anciens types adaptés sans changer les identifiants',
-                migratedLegacyTypes.map(ent => ent.id).join(',') === 'legacy_turret,legacy_barrier,legacy_guard'
-                && migratedLegacyTypes.map(ent => ent.type).join(',') === 'automatic_turret,mana_barrier,armed_guard'
-                && migratedLegacyTypes[2].privateNote === 'secret');
+                migratedLegacyTypes.map(ent => ent.id).join(',') === 'legacy_turret,legacy_guard'
+                && migratedLegacyTypes.map(ent => ent.type).join(',') === 'automatic_turret,armed_guard'
+                && migratedLegacyTypes[1].privateNote === 'secret');
 
             const initialPlan = Store.createDefaultPlan();
             localStorage.setItem('shadowrunbank_plan_v1', JSON.stringify(v1Fixture));
@@ -511,15 +510,12 @@
             check('grille d’acier transparente optiquement',
                 MapView.computeOccluders(floor0.id, 'optical').length === opticalOccluders.length);
             Store.deleteEntity(grate.id);
-            const manaBarrier = Store.addEntity('mana_barrier', floor0.id, 11, 5, 'BAR');
+            const manaBarrier = Store.addDecor('mana_barrier', floor0.id, 11, 5);
             MapView.invalidateOccluders();
             check('occlusion par canal : barrière de mana limitée à l’astral',
                 MapView.computeOccluders(floor0.id, 'astral').length === 4
                 && MapView.computeOccluders(floor0.id, 'magnetic').length === 0);
-            Store.setEntityState(manaBarrier, 'offline');
-            check('barrière dissipée : occlusion astrale supprimée',
-                MapView.computeOccluders(floor0.id, 'astral').length === 0);
-            Store.deleteEntity(manaBarrier.id);
+            Store.deleteDecor(manaBarrier.id);
 
             counter.width = 4;
             counter.height = 1.5;
@@ -680,8 +676,8 @@
                     .some(segment => segment.x1 > 12 && segment.x1 < 16 && segment.y1 > 3 && segment.y1 < 7));
 
             // ===== Phase 5 : catalogue de sécurité complet =====
-            check('catalogue cible : les 16 dispositifs sont déclarés',
-                EntityCatalog.securityTypes.length === 16
+            check('catalogue cible : les 15 dispositifs sont déclarés',
+                EntityCatalog.securityTypes.length === 15
                 && EntityCatalog.securityTypes.every(type => EntityCatalog.types[type]));
             check('catalogue cible : capacités spécialisées cohérentes',
                 EntityCatalog.get('retina_scanner').biometric
@@ -691,7 +687,7 @@
                 && EntityCatalog.get('detection_laser').defaultCoverage.width === 0.25);
             const paletteLabels = [...document.querySelectorAll('#tools-entities .tool-btn')]
                 .map(button => button.textContent);
-            check('palette : les 16 dispositifs sont accessibles',
+            check('palette : les 15 dispositifs sont accessibles',
                 EntityCatalog.securityTypes.every(type =>
                     paletteLabels.some(label => label.includes(EntityCatalog.get(type).name))));
 
@@ -754,9 +750,9 @@
             Store.ui.preview = true;
             MapView.render();
             const catalogIds = new Set(catalogEntities.map(ent => ent.id));
-            check('catalogue : les 16 dispositifs révélés sont visibles aux joueurs',
+            check('catalogue : les 15 dispositifs révélés sont visibles aux joueurs',
                 [...document.querySelectorAll('.entity[data-id]')]
-                    .filter(element => catalogIds.has(element.dataset.id)).length === 16);
+                    .filter(element => catalogIds.has(element.dataset.id)).length === 15);
             check('catalogue : couvertures encore indépendamment cachées',
                 [...document.querySelectorAll('#g-coverages [data-entity-id]')]
                     .filter(element => catalogIds.has(element.dataset.entityId)).length === 0);

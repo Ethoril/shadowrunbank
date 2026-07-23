@@ -85,7 +85,6 @@ const EntityCatalog = (() => {
         civilian: define({ category: 'personnel', name: 'Civil', label: 'CIV', icon: 'civilian', color: '#b0bec5', canPatrol: true, stateProfile: 'personnel', autoDiscover: true }),
 
         security_mage: define({ category: 'magic', name: 'Mage de sécurité', label: 'MAG', icon: 'security-mage', color: '#ab47bc', canPatrol: true, coverageType: 'circle', coverageChannel: 'astral', defaultCoverage: { radius: 5 }, magical: true, stateProfile: 'magical' }),
-        mana_barrier: define({ category: 'magic', name: 'Barrière de mana', label: 'BAR', icon: 'mana-barrier', color: '#bd00ff', blocksVision: ['astral'], magical: true, stateProfile: 'magical' }),
         patrol_spirit: define({ category: 'magic', name: 'Esprit de patrouille', label: 'ESP', icon: 'patrol-spirit', color: '#7e57c2', canPatrol: true, coverageType: 'circle', coverageChannel: 'astral', defaultCoverage: { radius: 4 }, magical: true, stateProfile: 'magical' }),
 
         network_node: define({ category: 'utility', name: 'Nœud réseau', label: 'NET', icon: 'network-node', color: '#ffb300', autoDiscover: true })
@@ -93,7 +92,6 @@ const EntityCatalog = (() => {
 
     const legacyAliases = Object.freeze({
         turret: 'automatic_turret',
-        barrier: 'mana_barrier',
         guard: 'armed_guard'
     });
 
@@ -101,7 +99,7 @@ const EntityCatalog = (() => {
         'mad_gate', 'maglock', 'retina_scanner', 'dna_analyzer',
         'camera', 'infrared_motion_sensor', 'detection_laser', 'pressure_plate',
         'micro_security_drone', 'combat_drone', 'automatic_turret', 'armed_guard',
-        'security_mage', 'steel_grate', 'mana_barrier', 'patrol_spirit'
+        'security_mage', 'steel_grate', 'patrol_spirit'
     ]);
 
     const fallback = define({ category: 'utility', name: 'Type inconnu', label: '???', color: '#888' });
@@ -152,6 +150,10 @@ const DecorCatalog = (() => {
         opening: define({ category: 'structural', name: 'Ouverture / passage', label: 'PAS', icon: 'opening', color: '#26a69a', width: 1.5, height: 0.25, layer: 'floor' }),
         glass: define({ category: 'structural', name: 'Vitre', label: 'VIT', icon: 'glass', color: '#80deea', width: 2, height: 0.2, blocksMovement: true }),
         grid: define({ category: 'structural', name: 'Grille', label: 'GRL', icon: 'grid', color: '#607d8b', width: 2, height: 0.2, blocksMovement: true }),
+        // Mur invisible : tracé comme une zone au sol, bloque le passage (moteur
+        // E3) et occulte l'astral, tout en restant caché des joueurs tant que le
+        // MJ ne le révèle pas (autoDiscover: false).
+        mana_barrier: define({ category: 'structural', name: 'Barrière de mana', label: 'BAR', icon: 'mana-barrier', color: '#bd00ff', width: 3, height: 0.35, layer: 'floor', blocksMovement: true, blocksVision: ['astral'], autoDiscover: false }),
         // 7.10 : rendus obsolètes par la cabine générée depuis les transitions.
         // Conservés pour afficher les plans existants, mais retirés de la
         // palette ; l'outil MJ « purge » propose leur suppression.
