@@ -901,6 +901,7 @@ const MapView = (() => {
             + (accessOpen ? ' access-open' : '')
             + (Store.isPlayerView() || Store.isEffectivelyRevealed(decor, 'decor') ? '' : ' unrevealed')
             + (selection && selection.kind === 'decor' && selection.id === decor.id ? ' selected' : '');
+        div.dataset.type = decor.type;
         setLayerPos(div, decor.x, decor.y);
         div.style.width = (decor.width * cellPx) + 'px';
         div.style.height = (decor.height * cellPx) + 'px';
