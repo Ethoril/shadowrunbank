@@ -166,6 +166,7 @@ const DecorCatalog = (() => {
         crate: define({ category: 'furniture', name: 'Caisse', label: 'CAI', icon: 'crate', color: '#795548', blocksMovement: true }),
         server_rack: define({ category: 'furniture', name: 'Baie serveur', label: 'SRV', icon: 'server-rack', color: '#26c6da', width: 1, height: 2, blocksMovement: true, blocksVision: opaque }),
         planter: define({ category: 'furniture', name: 'Grande plante / séparation', label: 'PLN', icon: 'planter', color: '#66bb6a', width: 2, height: 0.75, blocksMovement: true, blocksVision: opaque }),
+        vehicle: define({ category: 'furniture', name: 'Véhicule', label: 'VEH', icon: 'vehicle', color: '#607d8b', width: 4, height: 2, blocksMovement: true, blocksVision: opaque }),
 
         chair: define({ category: 'floor', name: 'Chaise', label: 'CHS', icon: 'chair', color: '#b0bec5', width: 0.6, height: 0.6, layer: 'floor', blocksMovement: true }),
         bench: define({ category: 'floor', name: 'Banc', label: 'BNC', icon: 'bench', color: '#a1887f', width: 2, height: 0.7, layer: 'floor', blocksMovement: true }),
