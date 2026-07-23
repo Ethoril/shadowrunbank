@@ -81,6 +81,7 @@ const EntityCatalog = (() => {
         drone: define({ category: 'defense', name: 'Drone à préciser', label: 'DRN', icon: 'drone', color: '#ff2a9d', networkable: true, canPatrol: true, coverageType: 'cone', coverageChannel: 'optical', defaultCoverage: { angle: 60, range: 6 }, canSweep: true, stateProfile: 'drone' }),
 
         armed_guard: define({ category: 'personnel', name: 'Garde armé', label: 'GRD', icon: 'armed-guard', color: '#4af626', canPatrol: true, coverageType: 'cone', coverageChannel: 'optical', defaultCoverage: { angle: 100, range: 5 }, armed: true, stateProfile: 'personnel', autoDiscover: true }),
+        swat: define({ category: 'personnel', name: 'SWAT', label: 'SWT', icon: 'swat', color: '#ff1744', canPatrol: true, coverageType: 'cone', coverageChannel: 'optical', defaultCoverage: { angle: 100, range: 5 }, armed: true, stateProfile: 'personnel', autoDiscover: true }),
         bank_employee: define({ category: 'personnel', name: 'Employé de banque', label: 'EMP', icon: 'bank-employee', color: '#ffca28', canPatrol: true, stateProfile: 'personnel', autoDiscover: true }),
         civilian: define({ category: 'personnel', name: 'Civil', label: 'CIV', icon: 'civilian', color: '#b0bec5', canPatrol: true, stateProfile: 'personnel', autoDiscover: true }),
 
@@ -98,7 +99,7 @@ const EntityCatalog = (() => {
     const securityTypes = Object.freeze([
         'mad_gate', 'maglock', 'retina_scanner', 'dna_analyzer',
         'camera', 'infrared_motion_sensor', 'detection_laser', 'pressure_plate',
-        'micro_security_drone', 'combat_drone', 'automatic_turret', 'armed_guard',
+        'micro_security_drone', 'combat_drone', 'automatic_turret', 'armed_guard', 'swat',
         'security_mage', 'steel_grate', 'patrol_spirit'
     ]);
 

@@ -676,8 +676,8 @@
                     .some(segment => segment.x1 > 12 && segment.x1 < 16 && segment.y1 > 3 && segment.y1 < 7));
 
             // ===== Phase 5 : catalogue de sécurité complet =====
-            check('catalogue cible : les 15 dispositifs sont déclarés',
-                EntityCatalog.securityTypes.length === 15
+            check('catalogue cible : les 16 dispositifs sont déclarés',
+                EntityCatalog.securityTypes.length === 16
                 && EntityCatalog.securityTypes.every(type => EntityCatalog.types[type]));
             check('catalogue cible : capacités spécialisées cohérentes',
                 EntityCatalog.get('retina_scanner').biometric
@@ -687,7 +687,7 @@
                 && EntityCatalog.get('detection_laser').defaultCoverage.width === 0.25);
             const paletteLabels = [...document.querySelectorAll('#tools-entities .tool-btn')]
                 .map(button => button.textContent);
-            check('palette : les 15 dispositifs sont accessibles',
+            check('palette : les 16 dispositifs sont accessibles',
                 EntityCatalog.securityTypes.every(type =>
                     paletteLabels.some(label => label.includes(EntityCatalog.get(type).name))));
 
@@ -750,9 +750,9 @@
             Store.ui.preview = true;
             MapView.render();
             const catalogIds = new Set(catalogEntities.map(ent => ent.id));
-            check('catalogue : les 15 dispositifs révélés sont visibles aux joueurs',
+            check('catalogue : les 16 dispositifs révélés sont visibles aux joueurs',
                 [...document.querySelectorAll('.entity[data-id]')]
-                    .filter(element => catalogIds.has(element.dataset.id)).length === 15);
+                    .filter(element => catalogIds.has(element.dataset.id)).length === 16);
             check('catalogue : couvertures encore indépendamment cachées',
                 [...document.querySelectorAll('#g-coverages [data-entity-id]')]
                     .filter(element => catalogIds.has(element.dataset.entityId)).length === 0);

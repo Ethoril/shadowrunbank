@@ -68,7 +68,7 @@ un flux temporaire aux joueurs sur sa pièce/étage.
 ```
 REQUIRED : `id`, `floorId` existant, `x`/`y` finis. Si `coverage` non-null : shape+channel valides et direction/angle/range/width/radius numériques (la migration remplit les manquants si l'objet existe).
 
-### 5.1 Catalogue des types (20)
+### 5.1 Catalogue des types (21)
 
 | type | cat. | capacités clés | coverage défaut | profil état |
 |---|---|---|---|---|
@@ -87,6 +87,7 @@ REQUIRED : `id`, `floorId` existant, `x`/`y` finis. Si `coverage` non-null : sha
 | `combat_drone` | defense | réseau, patrouille, sweep, armé | cone/optical 80° r7 | drone |
 | `automatic_turret` | defense | réseau, sweep, armé | cone/optical 90° r8 | drone |
 | `armed_guard` | personnel | patrouille, armé (PAS réseau) | cone/optical 100° r5 | personnel |
+| `swat` | personnel | patrouille, armé (PAS réseau), unité d'assaut | cone/optical 100° r5 | personnel |
 | `bank_employee` | personnel | patrouille, non armé, sans zone de détection | — | personnel |
 | `civilian` | personnel | patrouille, non armé, sans zone de détection | — | personnel |
 | `security_mage` | magic | patrouille, perception astrale | circle/astral rad5 | magical |
