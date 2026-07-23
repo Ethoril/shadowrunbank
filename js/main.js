@@ -19,6 +19,44 @@ const App = (() => {
     let collectionBootstrapAllowed = false;
     let lastPlayerView = null;
 
+    // --- Présence des sessions MJ (déconnexion des instances ouvertes ailleurs) ---
+    const GM_SESSION_HEARTBEAT_MS = 30000; // fréquence du battement de cœur
+    const GM_SESSION_LIVE_MS = 90000;      // session vivante si vue depuis < 90 s
+    const GM_SESSION_STALE_MS = 600000;    // au-delà de 10 min : document orphelin, purgé
+    const gmInstanceId = makeInstanceId();
+    let gmSessionActive = false;      // notre session est enregistrée dans le cloud
+    let gmHeartbeatTimer = null;
+    let gmSessionsUnsub = null;
+    let gmOtherSessions = [];         // autres sessions MJ vivantes (hors la nôtre)
+    let gmSelfKicked = false;         // on a été déconnecté par une autre session
+
+    function makeInstanceId() {
+        if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+            return window.crypto.randomUUID();
+        }
+        return 'gm-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    }
+
+    function describeInstance() {
+        const ua = navigator.userAgent || '';
+        let browser = 'Navigateur';
+        if (/Edg\//.test(ua)) browser = 'Edge';
+        else if (/OPR\//.test(ua) || /Opera/.test(ua)) browser = 'Opera';
+        else if (/Firefox\//.test(ua)) browser = 'Firefox';
+        else if (/Chrome\//.test(ua)) browser = 'Chrome';
+        else if (/Safari\//.test(ua)) browser = 'Safari';
+        let os = 'Appareil';
+        if (/Windows/.test(ua)) os = 'Windows';
+        else if (/Android/.test(ua)) os = 'Android';
+        else if (/iPhone|iPad|iPod/.test(ua)) os = 'iOS';
+        else if (/Mac OS X/.test(ua)) os = 'macOS';
+        else if (/Linux/.test(ua)) os = 'Linux';
+        const time = new Intl.DateTimeFormat('fr-FR', {
+            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+        }).format(new Date());
+        return browser + ' · ' + os + ' · ' + time;
+    }
+
     function renderAll() {
         Store.ensureVisibleView();
         updateViewChrome();
@@ -53,6 +91,7 @@ const App = (() => {
         if (snapshotBtn) snapshotBtn.style.display = Store.ui.readOnly ? 'none' : '';
         const snapshotPanel = document.getElementById('snapshot-panel');
         if (snapshotPanel && Store.ui.readOnly) snapshotPanel.hidden = true;
+        updateGmSessionsButton();
         updateOverlayControls();
         updateHistoryControls();
     }
@@ -609,6 +648,100 @@ const App = (() => {
         renderAll();
     }
 
+    /* --- Sessions MJ : présence multi-machines et déconnexion à distance --- */
+
+    function gmCloudReady() {
+        return !!(window.Cloud && typeof Cloud.registerSession === 'function');
+    }
+
+    function startGmSession(user) {
+        if (gmSessionActive || !gmCloudReady()) return;
+        gmSessionActive = true;
+        gmSelfKicked = false;
+        const email = (user && user.email) || Cloud.ADMIN_EMAIL || '';
+        Cloud.registerSession(gmInstanceId, { label: describeInstance(), userEmail: email })
+            .catch(err => console.warn('Enregistrement de la session MJ impossible', err));
+        gmHeartbeatTimer = setInterval(() => {
+            Cloud.heartbeatSession(gmInstanceId).catch(() => {});
+        }, GM_SESSION_HEARTBEAT_MS);
+        gmSessionsUnsub = Cloud.subscribeSessions(onRemoteSessions, err => {
+            console.warn('Suivi des sessions MJ indisponible', err);
+        });
+    }
+
+    function stopGmSession() {
+        if (gmHeartbeatTimer) { clearInterval(gmHeartbeatTimer); gmHeartbeatTimer = null; }
+        if (gmSessionsUnsub) { gmSessionsUnsub(); gmSessionsUnsub = null; }
+        if (gmSessionActive && gmCloudReady()) {
+            Cloud.endSession(gmInstanceId).catch(() => {});
+        }
+        gmSessionActive = false;
+        gmOtherSessions = [];
+        updateGmSessionsButton();
+    }
+
+    function onRemoteSessions(sessions) {
+        const now = Date.now();
+        const mine = sessions.find(session => session.id === gmInstanceId);
+        // On a été marqué par une autre session → déconnexion coopérative.
+        if (mine && mine.kickedAt && !gmSelfKicked) {
+            gmSelfKicked = true;
+            Editor.setTicker('SESSION FERMÉE À DISTANCE // PASSAGE EN LECTURE SEULE');
+            alert('Cette session MJ a été déconnectée depuis une autre machine.\n'
+                + 'Reconnecte-toi avec « 🔑 Admin » pour reprendre l’édition.');
+            if (gmCloudReady()) Cloud.logout();
+            return;
+        }
+        // Autres sessions encore vivantes (battement récent) et non déjà marquées.
+        gmOtherSessions = sessions.filter(session =>
+            session.id !== gmInstanceId
+            && !session.kickedAt
+            && session.heartbeatAt
+            && (now - session.heartbeatAt) < GM_SESSION_LIVE_MS);
+        // Purge opportuniste des documents orphelins (onglet fermé sans nettoyage).
+        sessions.forEach(session => {
+            if (session.id === gmInstanceId) return;
+            const last = session.heartbeatAt || session.startedAt || 0;
+            if (last && (now - last) > GM_SESSION_STALE_MS && gmCloudReady()) {
+                Cloud.endSession(session.id).catch(() => {});
+            }
+        });
+        updateGmSessionsButton();
+    }
+
+    function updateGmSessionsButton() {
+        const btn = document.getElementById('gm-sessions-btn');
+        if (!btn) return;
+        btn.style.display = Store.ui.readOnly ? 'none' : '';
+        const count = gmOtherSessions.length;
+        btn.disabled = count === 0;
+        btn.textContent = count > 0 ? '⏻ Autres sessions (' + count + ')' : '⏻ Autres sessions';
+        btn.title = count > 0
+            ? 'Déconnecter ' + count + ' autre(s) session(s) MJ ouverte(s) ailleurs'
+            : 'Aucune autre session MJ ouverte';
+    }
+
+    function wireGmSessionsButton() {
+        const btn = document.getElementById('gm-sessions-btn');
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            const targets = gmOtherSessions.slice();
+            if (!targets.length) {
+                Editor.setTicker('AUCUNE AUTRE SESSION MJ DÉTECTÉE');
+                return;
+            }
+            const liste = targets.map(session => '• ' + session.label).join('\n');
+            const message = 'Déconnecter ' + targets.length + ' autre(s) session(s) MJ ?\n\n'
+                + liste + '\n\nCes sessions repasseront en lecture seule.';
+            if (!confirm(message)) return;
+            Promise.all(targets.map(session => Cloud.kickSession(session.id).catch(err => {
+                console.warn('Déconnexion de la session ' + session.id + ' impossible', err);
+            }))).then(() => {
+                Editor.setTicker('SESSIONS MJ DISTANTES DÉCONNECTÉES // ' + targets.length);
+            });
+        });
+    }
+
     /* --- Branchement du cloud (appelé quand window.Cloud est disponible) --- */
     function wireCloud() {
         Store.setCloudActive(true);
@@ -629,6 +762,8 @@ const App = (() => {
             updateAuthUi(user);
             const wasAdmin = isAdmin;
             setAdminMode(admin);
+            if (admin) startGmSession(user);
+            else stopGmSession();
             Editor.setTicker(admin ? 'ACCÈS OVERLORD ACCORDÉ // MODE ÉDITION'
                                    : 'MODE JOUEUR // LECTURE SEULE TEMPS RÉEL');
             // Login admin après un premier snapshot "doc absent" → migration
@@ -726,6 +861,7 @@ const App = (() => {
         wireInspectorDrawer();
         wireOverlayControls();
         wireFullscreen();
+        wireGmSessionsButton();
 
         const previewBtn = document.getElementById('preview-btn');
         if (previewBtn) previewBtn.addEventListener('click', togglePreview);
@@ -738,7 +874,11 @@ const App = (() => {
             MapView.render();
             updatePlayerInspectorDock();
         });
-        window.addEventListener('pagehide', Store.handlePageHide);
+        window.addEventListener('pagehide', () => {
+            Store.handlePageHide();
+            // Retire notre session de la liste (au mieux ; sinon purge par péremption).
+            if (gmSessionActive && gmCloudReady()) Cloud.endSession(gmInstanceId).catch(() => {});
+        });
 
         renderAll();
         Anim.start();

@@ -21,6 +21,7 @@ const planRef = doc(db, 'plans', PLAN_ID);
 const tokensRef = collection(planRef, 'tokens');
 const discoveriesRef = collection(planRef, 'discoveries');
 const snapshotsRef = collection(planRef, 'snapshots');
+const sessionsRef = collection(planRef, 'sessions');
 
 function millis(value) {
     return value && typeof value.toMillis === 'function' ? value.toMillis() : (value || 0);
@@ -198,6 +199,57 @@ window.Cloud = {
                 ...item.data(),
                 discoveredAt: millis(item.data().discoveredAt)
             })), snapshot.metadata.hasPendingWrites);
+        }, onError);
+    },
+
+    /* --- Présence des sessions MJ (multi-machines) --- */
+
+    /* Déclare cette instance MJ. `data` : { label, userEmail }. */
+    registerSession(instanceId, data = {}) {
+        return setDoc(doc(sessionsRef, instanceId), {
+            label: data.label || 'Session MJ',
+            userEmail: data.userEmail || '',
+            startedAt: serverTimestamp(),
+            heartbeatAt: serverTimestamp(),
+            kickedAt: null
+        });
+    },
+
+    /* Battement de cœur : prouve que la session est toujours vivante. */
+    heartbeatSession(instanceId) {
+        return updateDoc(doc(sessionsRef, instanceId), {
+            heartbeatAt: serverTimestamp()
+        });
+    },
+
+    /* Retire cette instance de la liste (fermeture d'onglet, déconnexion). */
+    endSession(instanceId) {
+        return deleteDoc(doc(sessionsRef, instanceId));
+    },
+
+    /* Marque une AUTRE session pour déconnexion : elle le verra via son propre
+       onSnapshot et se déconnectera d'elle-même (pas de push serveur possible). */
+    kickSession(instanceId) {
+        return updateDoc(doc(sessionsRef, instanceId), {
+            kickedAt: serverTimestamp()
+        });
+    },
+
+    /* cb(sessions[], hasPendingWrites) — kickedAt/startedAt/heartbeatAt en ms
+       (0 si absent). Réservé au MJ (les règles refusent la lecture aux joueurs). */
+    subscribeSessions(cb, onError) {
+        return onSnapshot(sessionsRef, snapshot => {
+            cb(snapshot.docs.map(item => {
+                const data = item.data();
+                return {
+                    id: item.id,
+                    label: data.label || 'Session MJ',
+                    userEmail: data.userEmail || '',
+                    startedAt: millis(data.startedAt),
+                    heartbeatAt: millis(data.heartbeatAt),
+                    kickedAt: millis(data.kickedAt)
+                };
+            }), snapshot.metadata.hasPendingWrites);
         }, onError);
     }
 };
