@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Identifiant du build en cours. Remplacé au build par build-site.mjs
+         (SHA du commit) ; reste "dev" hors déploiement. -->
+    <meta name="app-build" content="dev">
     <title>Shadowrun Bank Planner :: Overlord_View</title>
     <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css?v=23">
@@ -17,6 +20,7 @@
                 <button id="inspector-toggle" type="button" aria-controls="inspector-panel" aria-expanded="false">ⓘ Inspecteur</button>
             </div>
             <span id="save-status"></span>
+            <span id="app-version" title="Version en cours" hidden></span>
             <div id="status-ticker">SYSTEM_BOOT…</div>
             <div class="history-controls" aria-label="Historique d'édition">
                 <button id="undo-btn" disabled title="Rien à annuler">↶ Annuler</button>
@@ -156,6 +160,7 @@
     <script src="js/editor.js?v=24"></script>
     <script src="js/visibility.js?v=22"></script>
     <script src="js/main.js?v=22"></script>
+    <script src="js/version.js?v=1"></script>
     <!-- Firebase (phase 3) : module ES ; en cas d'échec de chargement
          (file://, hors-ligne), l'appli reste en mode localStorage. -->
     <script type="module" src="js/cloud.js?v=20"></script>
