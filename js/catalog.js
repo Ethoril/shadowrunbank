@@ -173,7 +173,8 @@ const DecorCatalog = (() => {
         rug: define({ category: 'floor', name: 'Tapis', label: 'TAP', icon: 'rug', color: '#7e57c2', width: 3, height: 2, layer: 'floor' }),
         floor_marking: define({ category: 'floor', name: 'Marquage au sol', label: 'MRQ', icon: 'floor-marking', color: '#ffee58', width: 2, height: 0.35, layer: 'floor' }),
         small_furniture: define({ category: 'floor', name: 'Petit mobilier', label: 'OBJ', icon: 'small-furniture', color: '#9e9e9e', layer: 'floor', blocksMovement: true }),
-        visual_element: define({ category: 'floor', name: 'Élément visuel', label: 'DEC', icon: 'visual-element', color: '#ec407a', width: 2, height: 2, layer: 'floor' })
+        visual_element: define({ category: 'floor', name: 'Élément visuel', label: 'DEC', icon: 'visual-element', color: '#ec407a', width: 2, height: 2, layer: 'floor' }),
+        pentacle: define({ category: 'floor', name: 'Zone pentacle (magie)', label: 'PNT', icon: 'pentacle', color: '#ab47bc', width: 2, height: 2, layer: 'floor' })
     };
     const fallback = define({ category: 'floor', name: 'Décor inconnu', label: '???', color: '#888', layer: 'floor' });
     function get(type) { return types[type] || fallback; }
