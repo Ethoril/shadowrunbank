@@ -17,6 +17,13 @@
     --page-pad: 20px;
 }
 
+/* Quadrillage plus marqué côté MJ (édition) ; la vue joueur — et la
+   prévisualisation MJ qui la reproduit — garde l'opacité d'origine, à peine
+   visible, via --grid-line ci-dessus. */
+body:not(.player-mode) {
+    --grid-line: rgba(0, 210, 255, 0.16);
+}
+
 * { box-sizing: border-box; user-select: none; }
 
 body {
