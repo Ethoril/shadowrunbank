@@ -752,6 +752,74 @@ test('la remise à zéro MJ repart d’une feuille blanche restaurable', () => {
     assert.equal(Store.getPlan().rooms.length, roomsBefore);
 });
 
+test('agrandir la grille du plan s’applique toujours immédiatement', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const { cols, rows } = Store.getPlan().grid;
+    const result = Store.resizeGrid(cols + 4, rows + 2);
+    assert.equal(result.ok, true);
+    assert.equal(result.blockers.length, 0);
+    assert.equal(Store.getPlan().grid.cols, cols + 4);
+    assert.equal(Store.getPlan().grid.rows, rows + 2);
+    assert.equal(Store.undo(), 'Redimensionner la grille');
+});
+
+test('rétrécir la grille est refusé et liste tout ce qui dépasserait', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    Store.resetPlan(); // plan vierge (1 étage) pour isoler des contenus par défaut
+    const floor = Store.sortedFloors()[0];
+    const room = Store.addRoom(floor.id);
+    Store.paintCell(room, 2, 2);
+    Store.paintCell(room, 23, 15); // hors des futures bornes 10x10
+    const decor = Store.addDecor('counter', floor.id, 22, 5);
+    const token = Store.addToken(floor.id, 3, 3);
+    token.x = 25;
+    Store.saveToken(token);
+    const before = { ...Store.getPlan().grid };
+
+    const result = Store.resizeGrid(10, 10);
+    assert.equal(result.ok, false);
+    assert.deepEqual({ ...Store.getPlan().grid }, before,
+        'la grille ne change pas quand le redimensionnement est refusé');
+    const labels = result.blockers.map(b => b.label);
+    assert.ok(labels.some(l => l.includes(room.name)), 'la pièce hors bornes est listée');
+    assert.ok(labels.some(l => l.includes(decor.name)), 'le décor hors bornes est listé');
+    assert.ok(labels.some(l => l.includes(token.name)), 'le pion hors bornes est listé');
+    assert.ok(result.blockers.every(b => b.floorName === floor.name));
+});
+
+test('rétrécir la grille s’applique quand rien ne dépasse les nouvelles bornes', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    Store.resetPlan();
+    const floor = Store.sortedFloors()[0];
+    const room = Store.addRoom(floor.id);
+    Store.paintCell(room, 2, 2);
+    Store.addDecor('counter', floor.id, 3, 3);
+
+    const result = Store.resizeGrid(10, 10);
+    assert.equal(result.ok, true);
+    assert.equal(Store.getPlan().grid.cols, 10);
+    assert.equal(Store.getPlan().grid.rows, 10);
+});
+
+test('une gaine d’ascenseur hors des nouvelles bornes bloque le rétrécissement', () => {
+    const { Store } = loadApplicationCore();
+    Store.load();
+    const floors = Store.sortedFloors();
+    const elevator = Store.addTransition('elevator', 'Ascenseur de service');
+    // Le point lui-même resterait dans les bornes 10×10 (9,4 ≤ 9,5) ; c'est la
+    // gaine (2×2, centrée sur le point) qui dépasse : 9,4 + 1 > 10.
+    Store.addTransitionEndpoint(elevator, floors[0].id, 9.4, 9.4);
+    elevator.cabin.width = 2;
+    elevator.cabin.height = 2;
+
+    const result = Store.resizeGrid(10, 10);
+    assert.equal(result.ok, false);
+    assert.ok(result.blockers.some(b => b.label.includes(elevator.name)));
+});
+
 test('le catalogue expose tous les dispositifs attendus', () => {
     const { EntityCatalog } = loadApplicationCore();
     const types = Object.keys(EntityCatalog.types);

@@ -1577,6 +1577,95 @@ const Store = (() => {
         touch();
     }
 
+    /* --- Grille du plan (surface constructible, partagée par tous les étages) ---
+       Rétrécir la grille est bloquant : on liste ce qui dépasserait les nouvelles
+       bornes plutôt que de le recaler ou le perdre silencieusement (le MJ doit
+       d'abord déplacer ou supprimer ces éléments). Agrandir n'a besoin d'aucune
+       vérification, rien ne peut alors se retrouver hors bornes. */
+    function footprint(width, height, rotation) {
+        const rotated = ((rotation % 180) + 180) % 180 !== 0;
+        return { w: rotated ? height : width, h: rotated ? width : height };
+    }
+
+    function describeGridOverflow(newCols, newRows) {
+        const overflow = [];
+        const maxTokenX = Math.max(0.5, newCols - 0.5);
+        const maxTokenY = Math.max(0.5, newRows - 0.5);
+        const push = (floorId, label) => overflow.push({ floorId, label });
+
+        plan.rooms.forEach(room => {
+            const outside = room.cells.some(key => {
+                const [c, r] = key.split(',').map(Number);
+                return c >= newCols || r >= newRows;
+            });
+            if (outside) push(room.floorId, 'La pièce « ' + room.name + ' »');
+        });
+
+        plan.decors.forEach(decor => {
+            const definition = typeof DecorCatalog !== 'undefined'
+                ? DecorCatalog.get(decor.type) : { width: 1, height: 1 };
+            const { w, h } = footprint(decor.width, decor.height, decor.rotation);
+            if (decor.x + w / 2 > newCols || decor.y + h / 2 > newRows) {
+                push(decor.floorId, 'Le décor « ' + (decor.name || definition.name) + ' »');
+            }
+        });
+
+        plan.entities.forEach(ent => {
+            if (ent.x > maxTokenX || ent.y > maxTokenY) {
+                push(ent.floorId, 'Le dispositif « ' + ent.name + ' »');
+            } else if (isPlainObject(ent.patrol) && Array.isArray(ent.patrol.points)
+                && ent.patrol.points.some(point => point.x > newCols || point.y > newRows)) {
+                push(ent.floorId, 'La ronde de « ' + ent.name + ' »');
+            }
+        });
+
+        tokens.forEach(token => {
+            if (token.x > maxTokenX || token.y > maxTokenY) {
+                push(token.floorId, 'Le pion « ' + token.name + ' »');
+            }
+        });
+
+        plan.transitions.forEach(transition => {
+            transition.endpoints.forEach(endpoint => {
+                let outside = endpoint.x > maxTokenX || endpoint.y > maxTokenY;
+                if (!outside && transition.type === 'elevator' && transition.cabin) {
+                    const { w, h } = footprint(transition.cabin.width, transition.cabin.height,
+                        transition.cabin.rotation);
+                    outside = endpoint.x + w / 2 > newCols || endpoint.y + h / 2 > newRows;
+                }
+                if (outside) push(endpoint.floorId, 'La liaison « ' + transition.name + ' »');
+            });
+        });
+
+        return overflow.map(item => {
+            const floor = findFloor(item.floorId);
+            return { ...item, floorName: floor ? floor.name : 'Étage inconnu' };
+        });
+    }
+
+    /* Aperçu non destructif : ce qui bloquerait un rétrécissement, sans rien
+       modifier. Renvoie un tableau vide si le redimensionnement est sans risque. */
+    function previewGridResize(cols, rows) {
+        if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 4 || rows < 4) return null;
+        if (cols >= plan.grid.cols && rows >= plan.grid.rows) return [];
+        return describeGridOverflow(cols, rows);
+    }
+
+    function resizeGrid(cols, rows) {
+        if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 4 || rows < 4) {
+            return { ok: false, blockers: [] };
+        }
+        const shrinking = cols < plan.grid.cols || rows < plan.grid.rows;
+        if (shrinking) {
+            const blockers = describeGridOverflow(cols, rows);
+            if (blockers.length) return { ok: false, blockers };
+        }
+        plan.grid.cols = cols;
+        plan.grid.rows = rows;
+        touch('Redimensionner la grille');
+        return { ok: true, blockers: [] };
+    }
+
     /* --- Mutations : pièces --- */
     const ROOM_HUES = [190, 130, 30, 280, 330, 60, 210, 0, 100, 250];
 
@@ -2132,6 +2221,7 @@ const Store = (() => {
         applyRemoteTokens, saveToken, commitTokenPosition, addToken, duplicateToken, deleteToken,
         applyRemoteDiscoveries, addDiscovery, removeDiscovery, resetDiscoveries,
         addFloor, deleteFloor, moveFloor,
+        previewGridResize, resizeGrid,
         addRoom, paintCell, eraseCell, deleteRoom, roomAt,
         addDecor, duplicateDecor, deleteDecor,
         addTransition, addTransitionEndpoint, setTransitionFloorConnected,
