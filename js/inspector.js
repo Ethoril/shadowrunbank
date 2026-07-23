@@ -98,7 +98,9 @@ const Inspector = (() => {
 
         if (sel.kind === 'entity') {
             const ent = Store.findEntity(sel.id);
-            if (!ent || !Store.isEffectivelyRevealed(ent, 'entity')) { Store.ui.selection = null; return render(); }
+            // Consultable si révélé en dur OU visible via un flux (appareil piraté) :
+            // il faut au moins pouvoir lire le type de l'objet dévoilé par piratage.
+            if (!ent || !(Store.isEffectivelyRevealed(ent, 'entity') || Store.isCameraFeedVisible(ent, 'entity'))) { Store.ui.selection = null; return render(); }
             const def = EntityCatalog.get(ent.type);
             const type = document.createElement('span');
             type.className = 'ins-type-badge';
@@ -114,7 +116,7 @@ const Inspector = (() => {
                 roText('Ronde :', ent.patrol.points.length + ' waypoint(s) — '
                     + (ent.patrol.moving ? '▶ en déplacement' : '⏸ à l\'arrêt'));
             }
-            if (ent.coverage && ent.coverage.revealed) {
+            if (ent.coverage && (ent.coverage.revealed || Store.broadcastsFeed(ent))) {
                 const c = ent.coverage;
                 const extent = c.shape === 'circle'
                     ? 'rayon ' + c.radius + ' cases'
@@ -124,7 +126,7 @@ const Inspector = (() => {
             }
         } else if (sel.kind === 'decor') {
             const decor = Store.findDecor(sel.id);
-            if (!decor || !Store.isEffectivelyRevealed(decor, 'decor')) { Store.ui.selection = null; return render(); }
+            if (!decor || !(Store.isEffectivelyRevealed(decor, 'decor') || Store.isCameraFeedVisible(decor, 'decor'))) { Store.ui.selection = null; return render(); }
             const definition = DecorCatalog.get(decor.type);
             roText('Décor :', definition.name);
             roText('Nom :', decor.name);
@@ -147,7 +149,7 @@ const Inspector = (() => {
             roText('Déplacement :', token.locked ? 'Verrouillé' : (token.playerMovable ? 'Autorisé' : 'Réservé au MJ'));
         } else if (sel.kind === 'transition') {
             const transition = Store.findTransition(sel.id);
-            if (!transition || !Store.isEffectivelyRevealed(transition, 'transition')) {
+            if (!transition || !(Store.isEffectivelyRevealed(transition, 'transition') || Store.isCameraFeedVisible(transition, 'transition'))) {
                 Store.ui.selection = null; return render();
             }
             roText('Transition :', transition.name);
