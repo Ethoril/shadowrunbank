@@ -112,6 +112,7 @@ const Editor = (() => {
             Store.ui.snapToGrid = e.target.checked;
         });
         structure.appendChild(snap);
+        structure.appendChild(renderGridSizeControl());
 
         const resetButton = document.createElement('button');
         resetButton.className = 'btn-action';
@@ -197,6 +198,74 @@ const Editor = (() => {
         setTool('select');
         App.renderAll();
         setTicker('PLAN RÉINITIALISÉ // FEUILLE BLANCHE');
+    }
+
+    /* Surface constructible : une seule grille pour tout le plan (pas par
+       étage). Rétrécir est bloquant et jamais silencieux : Store.resizeGrid
+       refuse et renvoie la liste de ce qui dépasserait, à charge pour le MJ
+       de déplacer ou supprimer ces éléments avant de réessayer. */
+    function renderGridSizeControl() {
+        const group = document.createElement('details');
+        group.className = 'tool-category';
+        group.open = false;
+        const title = document.createElement('summary');
+        title.textContent = 'Grille du plan';
+        group.appendChild(title);
+
+        const body = document.createElement('div');
+        body.className = 'tool-category-list';
+
+        const hint = document.createElement('p');
+        hint.className = 'tool-option';
+        hint.textContent = 'Surface constructible, partagée par tous les étages.';
+        body.appendChild(hint);
+
+        const grid = Store.getPlan().grid;
+        const colsInput = document.createElement('input');
+        colsInput.type = 'number';
+        colsInput.min = '4';
+        colsInput.value = grid.cols;
+        const colsRow = document.createElement('label');
+        colsRow.className = 'tool-option';
+        colsRow.append('Colonnes :', colsInput);
+
+        const rowsInput = document.createElement('input');
+        rowsInput.type = 'number';
+        rowsInput.min = '4';
+        rowsInput.value = grid.rows;
+        const rowsRow = document.createElement('label');
+        rowsRow.className = 'tool-option';
+        rowsRow.append('Lignes :', rowsInput);
+
+        const applyButton = document.createElement('button');
+        applyButton.className = 'btn-secondary';
+        applyButton.textContent = 'Appliquer';
+        applyButton.addEventListener('click', () => {
+            applyGridResize(Number(colsInput.value), Number(rowsInput.value));
+        });
+
+        body.append(colsRow, rowsRow, applyButton);
+        group.appendChild(body);
+        return group;
+    }
+
+    function applyGridResize(cols, rows) {
+        if (Store.isPlayerView()) return;
+        if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 4 || rows < 4) {
+            alert('La grille doit compter au moins 4 colonnes et 4 lignes.');
+            return;
+        }
+        const result = Store.resizeGrid(cols, rows);
+        if (!result.ok) {
+            const lines = result.blockers.map(item => '— ' + item.label
+                + ' (étage « ' + item.floorName + ' ») dépasse la nouvelle grille.').join('\n');
+            alert('Redimensionnement refusé, ces éléments dépasseraient la nouvelle grille :\n\n'
+                + lines + '\n\nDéplace-les ou supprime-les avant de réessayer.');
+            return;
+        }
+        renderTools();
+        App.renderAll();
+        setTicker('GRILLE REDIMENSIONNÉE // ' + cols + ' × ' + rows);
     }
 
     /* 7.10 : suppression des décors historiques rendus obsolètes par la
