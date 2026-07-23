@@ -50,6 +50,7 @@ const EntityCatalog = (() => {
         biometric: false,
         armed: false,
         magical: false,
+        astralOnly: false, // n'existe que sur le plan astral → invisible aux capteurs physiques (caméra optique…)
         autoDiscover: false,
         stateProfile: 'electronic'
     };
@@ -86,7 +87,7 @@ const EntityCatalog = (() => {
         civilian: define({ category: 'personnel', name: 'Civil', label: 'CIV', icon: 'civilian', color: '#b0bec5', canPatrol: true, stateProfile: 'personnel', autoDiscover: true }),
 
         security_mage: define({ category: 'magic', name: 'Mage de sécurité', label: 'MAG', icon: 'security-mage', color: '#ab47bc', canPatrol: true, coverageType: 'circle', coverageChannel: 'astral', defaultCoverage: { radius: 5 }, magical: true, stateProfile: 'magical' }),
-        patrol_spirit: define({ category: 'magic', name: 'Esprit de patrouille', label: 'ESP', icon: 'patrol-spirit', color: '#7e57c2', canPatrol: true, coverageType: 'circle', coverageChannel: 'astral', defaultCoverage: { radius: 4 }, magical: true, stateProfile: 'magical' }),
+        patrol_spirit: define({ category: 'magic', name: 'Esprit de patrouille', label: 'ESP', icon: 'patrol-spirit', color: '#7e57c2', canPatrol: true, coverageType: 'circle', coverageChannel: 'astral', defaultCoverage: { radius: 4 }, magical: true, astralOnly: true, stateProfile: 'magical' }),
 
         network_node: define({ category: 'utility', name: 'Nœud réseau', label: 'NET', icon: 'network-node', color: '#ffb300', autoDiscover: true })
     };
@@ -141,6 +142,7 @@ const DecorCatalog = (() => {
         blocksMovement: false,
         blocksVision: [],
         icon: null,
+        astralOnly: false, // n'existe que sur le plan astral → invisible aux capteurs physiques
         autoDiscover: true
     };
     const define = config => Object.freeze({ ...base, ...config });
@@ -154,7 +156,7 @@ const DecorCatalog = (() => {
         // Mur invisible : tracé comme une zone au sol, bloque le passage (moteur
         // E3) et occulte l'astral, tout en restant caché des joueurs tant que le
         // MJ ne le révèle pas (autoDiscover: false).
-        mana_barrier: define({ category: 'structural', name: 'Barrière de mana', label: 'BAR', icon: 'mana-barrier', color: '#bd00ff', width: 3, height: 0.35, layer: 'floor', blocksMovement: true, blocksVision: ['astral'], autoDiscover: false }),
+        mana_barrier: define({ category: 'structural', name: 'Barrière de mana', label: 'BAR', icon: 'mana-barrier', color: '#bd00ff', width: 3, height: 0.35, layer: 'floor', blocksMovement: true, blocksVision: ['astral'], astralOnly: true, autoDiscover: false }),
         // 7.10 : rendus obsolètes par la cabine générée depuis les transitions.
         // Conservés pour afficher les plans existants, mais retirés de la
         // palette ; l'outil MJ « purge » propose leur suppression.

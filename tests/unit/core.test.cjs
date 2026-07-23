@@ -319,7 +319,34 @@ test('le flux hérite du piratage réseau et les mobiles disparaissent en sortan
     assert.ok(!MapView.cameraFeedSnapshot(floor.id, 4000).entityIds.includes(guard.id));
 
     node.state = 'active';
-    assert.equal(MapView.cameraFeedSnapshot(floor.id, 0).cameraIds.length, 0);
+    assert.equal(MapView.cameraFeedSnapshot(floor.id, 0).deviceIds.length, 0);
+});
+
+test('tout appareil piraté est visible ; seuls cône/cercle diffusent un flux', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[1];
+    Store.ui.preview = true;
+    Store.ui.currentFloorId = floor.id;
+
+    const laser = Store.addEntity('detection_laser', floor.id, 5, 7, 'Laser');
+    laser.state = 'hacked';
+    const sensor = Store.addEntity('infrared_motion_sensor', floor.id, 8, 7, 'IR');
+    sensor.state = 'hacked';
+    sensor.coverage.direction = 0;
+    const maglock = Store.addEntity('maglock', floor.id, 12, 7, 'Verrou');
+    maglock.state = 'hacked';
+    const guardBehindLaser = Store.addEntity('armed_guard', floor.id, 6, 7, 'Près du laser');
+    const guardInSensor = Store.addEntity('armed_guard', floor.id, 10, 7, 'Dans le cône IR');
+
+    const snap = MapView.cameraFeedSnapshot(floor.id, 0);
+    // Icône : les trois appareils piratés (électronique/accès) sont visibles.
+    assert.ok(snap.deviceIds.includes(laser.id), 'le laser piraté est visible');
+    assert.ok(snap.deviceIds.includes(sensor.id), 'le capteur piraté est visible');
+    assert.ok(snap.deviceIds.includes(maglock.id), 'le maglock piraté est visible');
+    // Flux : seul le capteur à cône révèle son environnement ; le laser (faisceau) non.
+    assert.ok(snap.entityIds.includes(guardInSensor.id), 'le cône du capteur diffuse un flux');
+    assert.ok(!snap.entityIds.includes(guardBehindLaser.id), 'le laser n’expose pas son environnement');
 });
 
 test('la gaine d’un ascenseur partage strictement ses coordonnées (7.8)', () => {

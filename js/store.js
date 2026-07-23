@@ -1253,22 +1253,36 @@ const Store = (() => {
             || (discovery.kind === kind && discovery.elementId === elementId));
     }
 
-    /* Une caméra piratée fournit un flux temporaire aux joueurs. Le nœud
-       réseau est pris en compte via getEffectiveState, comme pour le rendu. */
-    function cameraFeedCameras(floorId) {
+    /* Un appareil piratable dont l'état effectif est « piraté » devient visible
+       aux joueurs. Seuls les profils électronique / drone / accès comptent : un
+       garde « alerté » ou un mage « perturbé » (même état interne) n'est PAS
+       piraté. Le nœud réseau est pris en compte via getEffectiveState. */
+    const HACKABLE_PROFILES = ['electronic', 'drone', 'access'];
+    const FEED_SHAPES = ['cone', 'circle'];
+    function deviceStateProfile(ent) {
+        return (typeof EntityCatalog !== 'undefined'
+            && EntityCatalog.get(ent.type).stateProfile) || 'electronic';
+    }
+    function hackedDevices(floorId) {
         if (!plan) return [];
         return plan.entities.filter(ent => ent.floorId === floorId
-            && ent.type === 'camera'
-            && ent.coverage && ent.coverage.shape === 'cone'
-            && getEffectiveState(ent) === 'hacked');
+            && getEffectiveState(ent) === 'hacked'
+            && HACKABLE_PROFILES.includes(deviceStateProfile(ent)));
+    }
+    /* Parmi les appareils piratés, ceux dotés d'un cône ou d'un cercle de vision
+       diffusent un flux qui révèle leur zone. Les autres (laser en faisceau,
+       plaque de pression, portique, ou sans zone) n'exposent que leur icône. */
+    function feedDevices(floorId) {
+        return hackedDevices(floorId).filter(ent =>
+            ent.coverage && FEED_SHAPES.includes(ent.coverage.shape));
     }
 
     function isCameraFeedRevealed(item, kind) {
         if (!item) return false;
-        if (kind === 'floor') return cameraFeedCameras(item.id).length > 0;
+        if (kind === 'floor') return feedDevices(item.id).length > 0;
         if (kind === 'room') {
-            return cameraFeedCameras(item.floorId).some(camera =>
-                roomAt(camera.floorId, Math.floor(camera.x), Math.floor(camera.y)) === item);
+            return feedDevices(item.floorId).some(device =>
+                roomAt(device.floorId, Math.floor(device.x), Math.floor(device.y)) === item);
         }
         return false;
     }
@@ -2216,7 +2230,7 @@ const Store = (() => {
         getOverlayPreferences, setOverlayVisibility,
         getInspectorViewState, setInspectorViewState,
         isPlayerView, isDiscovered, isEffectivelyRevealed, isEndpointRevealed, endpointLetter,
-        cameraFeedCameras, isCameraFeedRevealed,
+        hackedDevices, feedDevices, isCameraFeedRevealed,
         visibleFloors, visibleRooms, visibleEntities, visibleDecors, visibleTokens, visibleTransitions,
         ensureVisibleView,
         applyRemoteTokens, saveToken, commitTokenPosition, addToken, duplicateToken, deleteToken,

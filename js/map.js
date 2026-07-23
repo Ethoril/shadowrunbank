@@ -626,23 +626,31 @@ const MapView = (() => {
         const at = now === undefined ? Date.now() : now;
         const roomIds = new Set(), entityIds = new Set();
         const decorIds = new Set(), transitionIds = new Set();
-        const cameras = Store.cameraFeedCameras(floorId);
+        const devices = Store.feedDevices(floorId);
 
-        cameras.forEach(camera => {
-            const position = Anim.effectivePos(camera, at);
-            const coverage = camera.coverage;
-            const polygon = conePolygon(position.x, position.y,
-                Anim.coverageDirection(camera, at), coverage.angle, coverage.range,
-                computeOccluders(floorId, coverage.channel || 'optical'));
+        devices.forEach(device => {
+            const position = Anim.effectivePos(device, at);
+            const coverage = device.coverage;
+            const channel = coverage.channel || 'optical';
+            // Les phénomènes purement astraux (esprits, barrières de mana) ne sont
+            // perçus que sur le canal astral : un flux optique les ignore.
+            const perceivesAstral = channel === 'astral';
+            const occluders = computeOccluders(floorId, channel);
+            const polygon = coverage.shape === 'circle'
+                ? conePolygon(position.x, position.y, 0, 360, coverage.radius, occluders)
+                : conePolygon(position.x, position.y, Anim.coverageDirection(device, at),
+                    coverage.angle, coverage.range, occluders);
             const room = Store.roomAt(floorId, Math.floor(position.x), Math.floor(position.y));
             if (room) roomIds.add(room.id);
 
             Store.floorEntities(floorId).forEach(entity => {
-                if (entity.id === camera.id) return;
+                if (entity.id === device.id) return;
+                if (EntityCatalog.get(entity.type).astralOnly && !perceivesAstral) return;
                 const target = Anim.effectivePos(entity, at);
                 if (pointInPolygon([target.x, target.y], polygon)) entityIds.add(entity.id);
             });
             Store.floorDecors(floorId).forEach(decor => {
+                if (DecorCatalog.get(decor.type).astralOnly && !perceivesAstral) return;
                 const target = orientedRectangle(decor.x, decor.y, decor.rotation,
                     decor.width, decor.height, true);
                 if (polygonsIntersect(target, polygon)) decorIds.add(decor.id);
@@ -659,7 +667,8 @@ const MapView = (() => {
         const sorted = set => [...set].sort();
         const snapshot = {
             floorId,
-            cameraIds: cameras.map(camera => camera.id).sort(),
+            // Tous les appareils piratés apparaissent (icône), pas seulement ceux à flux.
+            deviceIds: Store.hackedDevices(floorId).map(device => device.id).sort(),
             roomIds: sorted(roomIds),
             entityIds: sorted(entityIds),
             decorIds: sorted(decorIds),
@@ -677,7 +686,7 @@ const MapView = (() => {
         if (!floorId) return false;
         const snapshot = cameraFeedSnapshot(floorId, now);
         if (kind === 'entity') return snapshot.entityIds.includes(item.id)
-            || snapshot.cameraIds.includes(item.id);
+            || snapshot.deviceIds.includes(item.id);
         if (kind === 'decor') return snapshot.decorIds.includes(item.id);
         if (kind === 'transition') return snapshot.transitionIds.includes(item.id);
         return false;
@@ -691,10 +700,10 @@ const MapView = (() => {
     function cameraVisibleItems(items, kind, snapshot) {
         if (!snapshot) return items;
         const ids = new Set(snapshot[kind + 'Ids']);
-        // Une caméra qui alimente le flux (nœud piraté) doit apparaître elle-même,
-        // pas seulement ce qu'elle voit : sinon les joueurs voient la zone
-        // surveillée sans savoir d'où vient le flux.
-        if (kind === 'entity') snapshot.cameraIds.forEach(id => ids.add(id));
+        // Tout appareil piraté apparaît lui-même (son icône), pas seulement ce
+        // que voient ceux qui diffusent un flux : sinon les joueurs verraient la
+        // zone surveillée sans savoir d'où vient le flux.
+        if (kind === 'entity') snapshot.deviceIds.forEach(id => ids.add(id));
         return items.filter(item => Store.isEffectivelyRevealed(item, kind) || ids.has(item.id));
     }
 
