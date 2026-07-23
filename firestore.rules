@@ -44,6 +44,15 @@ service cloud.firestore {
       match /snapshots/{snapshotId} {
         allow read, write: if isAdmin();
       }
+
+      // Présence des sessions MJ : chaque instance MJ ouverte enregistre un
+      // document (battement de cœur), et peut en marquer un autre `kickedAt`
+      // pour le déconnecter. Toutes les instances partagent le compte MJ, donc
+      // isAdmin() suffit : n'importe quelle session MJ peut lire/écrire les
+      // autres. Aucune donnée sensible, jamais lue côté joueur.
+      match /sessions/{sessionId} {
+        allow read, write: if isAdmin();
+      }
     }
   }
 }
