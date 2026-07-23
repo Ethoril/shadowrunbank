@@ -349,6 +349,31 @@ test('tout appareil piraté est visible ; seuls cône/cercle diffusent un flux',
     assert.ok(!snap.entityIds.includes(guardBehindLaser.id), 'le laser n’expose pas son environnement');
 });
 
+test('un appareil piraté à cône est consultable et diffuse son cône aux joueurs', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.sortedFloors()[1];
+    Store.ui.preview = true;
+    Store.ui.currentFloorId = floor.id;
+
+    const sensor = Store.addEntity('infrared_motion_sensor', floor.id, 8, 7, 'IR');
+    sensor.state = 'hacked';
+    sensor.coverage.direction = 0;
+    const laser = Store.addEntity('detection_laser', floor.id, 5, 7, 'Laser');
+    laser.state = 'hacked';
+
+    // broadcastsFeed : vrai pour le cône piraté, faux pour le faisceau piraté.
+    assert.ok(Store.broadcastsFeed(sensor), 'le capteur à cône diffuse un flux');
+    assert.ok(!Store.broadcastsFeed(laser), 'le laser (faisceau) ne diffuse pas de flux');
+
+    // Inspecteur : un appareil visible uniquement par flux reste consultable
+    // (sinon l’inspecteur se vide au lieu d’afficher au moins son type).
+    assert.ok(!Store.isEffectivelyRevealed(sensor, 'entity'),
+        'le capteur n’est pas révélé en dur, seulement via le flux');
+    assert.ok(Store.isCameraFeedVisible(sensor, 'entity'),
+        'le capteur piraté est consultable via le flux');
+});
+
 test('la gaine d’un ascenseur partage strictement ses coordonnées (7.8)', () => {
     const { Store } = loadApplicationCore();
     Store.load();

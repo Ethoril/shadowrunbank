@@ -1241,12 +1241,20 @@ const MapView = (() => {
         }
 
         const specs = [];
-        Store.visibleEntities(floor.id).forEach(ent => {
+        // En vue joueur, on inclut aussi les appareils visibles via un flux
+        // (piratés) — comme la couche d'icônes — sinon le cône d'un appareil
+        // piraté mais pas encore croisé ne serait jamais itéré.
+        const coverageEntities = Store.isPlayerView()
+            ? cameraVisibleItems(Store.floorEntities(floor.id), 'entity', feedSnapshot(floor.id, now))
+            : Store.visibleEntities(floor.id);
+        coverageEntities.forEach(ent => {
             if (!ent.coverage) return;
             // La couverture conserve son réglage MJ indépendant, mais un cône
-            // peut aussi avoir été découvert avec son porteur dans une salle.
+            // peut aussi avoir été découvert avec son porteur dans une salle, ou
+            // exposé par le flux d'un appareil piraté qui diffuse sa zone.
             const coverageRevealed = ent.coverage.revealed
-                || Store.isDiscovered('coverage', ent.id);
+                || Store.isDiscovered('coverage', ent.id)
+                || Store.broadcastsFeed(ent);
             if (Store.isPlayerView() && !coverageRevealed) return;
             const effState = Store.getEffectiveState(ent);
             if (effState === 'offline') return;
