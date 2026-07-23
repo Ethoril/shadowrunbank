@@ -676,7 +676,8 @@ const MapView = (() => {
         const floorId = item.floorId || (floor && floor.id);
         if (!floorId) return false;
         const snapshot = cameraFeedSnapshot(floorId, now);
-        if (kind === 'entity') return snapshot.entityIds.includes(item.id);
+        if (kind === 'entity') return snapshot.entityIds.includes(item.id)
+            || snapshot.cameraIds.includes(item.id);
         if (kind === 'decor') return snapshot.decorIds.includes(item.id);
         if (kind === 'transition') return snapshot.transitionIds.includes(item.id);
         return false;
@@ -690,6 +691,10 @@ const MapView = (() => {
     function cameraVisibleItems(items, kind, snapshot) {
         if (!snapshot) return items;
         const ids = new Set(snapshot[kind + 'Ids']);
+        // Une caméra qui alimente le flux (nœud piraté) doit apparaître elle-même,
+        // pas seulement ce qu'elle voit : sinon les joueurs voient la zone
+        // surveillée sans savoir d'où vient le flux.
+        if (kind === 'entity') snapshot.cameraIds.forEach(id => ids.add(id));
         return items.filter(item => Store.isEffectivelyRevealed(item, kind) || ids.has(item.id));
     }
 
