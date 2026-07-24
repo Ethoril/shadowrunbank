@@ -42,7 +42,10 @@ const Visibility = (() => {
             obj[property] = next;
             if (!next && discovery) Store.removeDiscovery(discovery.kind, discovery.elementId);
             if (property === 'visible' && obj.id && Store.findToken(obj.id)) Store.saveToken(obj);
-            else Store.touch();
+            else { Store.touch(); Store.saveNow(); } // reveal = action délibérée : on
+            // pousse tout de suite (pas d'attente du debounce de 800 ms, qui peut être
+            // fortement retardé quand l'onglet MJ n'est pas au premier plan) — sans ça,
+            // la révélation n'atteignait souvent les joueurs qu'à leur prochaine action.
             paint();
             refreshMap();
             render();
@@ -350,6 +353,7 @@ const Visibility = (() => {
             if (e.coverage) e.coverage.revealed = value;
         });
         Store.touch();
+        Store.saveNow(); // révélation/masquage en masse : propagation immédiate (cf. eyeButton).
         refreshMap();
         render();
     }
