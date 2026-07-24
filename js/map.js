@@ -95,6 +95,10 @@ const MapView = (() => {
         b.style.left = Math.max(0, Math.floor((w - bw) / 2)) + 'px';
         b.style.top = Math.max(0, Math.floor((h - bh) / 2)) + 'px';
         b.style.backgroundSize = cellPx + 'px ' + cellPx + 'px';
+        // Exposé au CSS pour dimensionner ce qui doit suivre la case (pion joueur)
+        // au lieu d'une taille fixe en pixels — sinon un quadrillage plus dense
+        // (plus de cases → cellPx plus petit) laisse le pion trop gros.
+        b.style.setProperty('--cell', cellPx + 'px');
     }
 
     /* --- Zoom : re-rendu complet à la nouvelle taille de case, puis le point

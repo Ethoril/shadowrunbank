@@ -825,8 +825,10 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     position: absolute;
     left: 0;
     top: 0;
-    width: 44px;
-    height: 44px;
+    /* Un poil plus grand que la case, et le reste au zoom (--cell = taille de
+       case courante, posée par layoutBoard). */
+    width: calc(var(--cell, 30px) * 1.12);
+    height: calc(var(--cell, 30px) * 1.12);
     transform: translate3d(var(--tx, 0px), var(--ty, 0px), 0) translate(-50%, -50%);
     border-radius: 50%;
     display: flex;
@@ -844,9 +846,24 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     user-select: none;
     pointer-events: auto;
 }
+/* Cible tactile : le cercle visible suit la case (fin), mais la zone cliquable
+   ne descend jamais sous 44 px — confort du tap sur tablette quand la grille
+   est dense. Transparent, hors flux flex (position absolue), et pointer-events
+   hérité du pion → suit automatiquement le mode sélection / pass-through. Un
+   clic sur cette zone cible le pion lui-même (le pseudo n'est pas un nœud DOM). */
+.runner-token::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(44px, 100%);
+    height: max(44px, 100%);
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+}
 .token-icon {
-    width: 28px;
-    height: 28px;
+    width: calc(var(--cell, 30px) * 0.72);
+    height: calc(var(--cell, 30px) * 0.72);
     object-fit: contain;
     pointer-events: none;
     user-select: none;
@@ -855,7 +872,7 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
 .token-label {
     position: absolute;
     left: 50%;
-    bottom: -7px;
+    bottom: calc(var(--cell, 30px) * -0.2);
     transform: translateX(-50%);
     min-width: 16px;
     padding: 1px 3px;
@@ -863,7 +880,7 @@ body.player-mode .app-container { grid-template-columns: 1fr 300px; }
     border-radius: 5px;
     background: rgba(3, 7, 13, 0.94);
     color: #fff;
-    font-size: 0.48rem;
+    font-size: clamp(6px, calc(var(--cell, 30px) * 0.32), 11px);
     line-height: 1;
     white-space: nowrap;
     pointer-events: none;
