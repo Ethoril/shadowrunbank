@@ -284,6 +284,43 @@ const MapView = (() => {
         return keys;
     }
 
+    /* Arêtes de grille chevauchées par la PORTE d'une cabine d'ascenseur, du
+       côté `doorSide` (après rotation). Percées comme une porte franchissable :
+       la cabine est hors zonage (murée sur ses faces côté pièce) ; sans ce
+       perçage, on n'y entrait qu'en coupant le coin convexe de la niche —
+       exactement ce que l'anti-coupe d'angle interdit désormais. Le pion entre
+       et sort donc de la cabine orthogonalement par sa porte. */
+    function cabinDoorEdges(cabin) {
+        if (!cabin || !cabin.hasDoor) return [];
+        const side = cabin.doorSide;
+        const horizontalSide = side === 'north' || side === 'south';
+        const normal = side === 'north' ? { x: 0, y: -1 }
+            : side === 'south' ? { x: 0, y: 1 }
+                : side === 'east' ? { x: 1, y: 0 } : { x: -1, y: 0 };
+        const tangent = horizontalSide ? { x: 1, y: 0 } : { x: 0, y: 1 };
+        const halfNormal = (horizontalSide ? cabin.height : cabin.width) / 2;
+        const halfTangent = (horizontalSide ? cabin.width : cabin.height) / 2;
+        const angle = cabin.rotation * Math.PI / 180;
+        const rotate = v => ({
+            x: v.x * Math.cos(angle) - v.y * Math.sin(angle),
+            y: v.x * Math.sin(angle) + v.y * Math.cos(angle)
+        });
+        const wN = rotate(normal), wT = rotate(tangent);
+        const keys = [];
+        if (Math.abs(wN.y) > Math.abs(wN.x)) { // porte au nord/sud → arêtes H
+            const line = Math.round(cabin.y + wN.y * halfNormal);
+            const span = Math.abs(wT.x) * halfTangent;
+            const min = Math.floor(cabin.x - span), max = Math.ceil(cabin.x + span) - 1;
+            for (let c = min; c <= max; c++) keys.push('H:' + line + ':' + c);
+        } else {                               // porte à l'est/ouest → arêtes V
+            const line = Math.round(cabin.x + wN.x * halfNormal);
+            const span = Math.abs(wT.y) * halfTangent;
+            const min = Math.floor(cabin.y - span), max = Math.ceil(cabin.y + span) - 1;
+            for (let r = min; r <= max; r++) keys.push('V:' + line + ':' + r);
+        }
+        return keys;
+    }
+
     /* Cases dont le CENTRE tombe dans l'empreinte (obstacle massif). */
     function footprintCells(cx, cy, w, h) {
         const keys = [];
@@ -335,14 +372,16 @@ const MapView = (() => {
             if (isDoorPassable(decor)) pierced.push(...straddled);
             else straddled.forEach(k => edges.add(k)); // porte verrouillée = mur
         });
+        // Les cabines d'ascenseur ne sont PAS des cases bloquées : elles sont
+        // « boardables ». Leur porte perce le mur qu'elle chevauche pour qu'on
+        // atteigne le point de passage (déclencheur de la modale de transition)
+        // orthogonalement — un arrêt sans porte reste, lui, muré.
+        Store.elevatorCabinsOnFloor(floorId).forEach(cabin =>
+            cabinDoorEdges(cabin).forEach(k => pierced.push(k)));
+
         // Les percements sont appliqués en dernier : une porte franchissable
         // ouvre l'arête même si une barrière la posait au même endroit.
         pierced.forEach(k => edges.delete(k));
-
-        // Les cabines d'ascenseur ne sont PAS des cases bloquées : elles sont
-        // « boardables ». Le pion doit pouvoir atteindre le point de passage
-        // pour déclencher la modale de transition (déplacement inter-étages,
-        // hors périmètre de la zone mono-étage).
 
         const blockers = { edges, cells };
         movementBlockerCache.set(floorId, { token, blockers });
@@ -396,17 +435,23 @@ const MapView = (() => {
                     if (!inGrid(nc, nr) || cellBlocked(nc, nr)) continue;
                     const diagonal = dc !== 0 && dr !== 0;
                     if (diagonal) {
-                        // Anti-coupe d'angle : les QUATRE arêtes qui se
-                        // rejoignent au point de coin partagé doivent être
-                        // ouvertes (on ne se faufile pas près d'un mur).
-                        // Ne tester que les deux arêtes touchant la case de
-                        // DÉPART laissait passer la diagonale par un coin
-                        // CONVEXE de pièce, dont les deux murs touchent la case
-                        // d'ARRIVÉE : la pièce paraissait « ouverte » au coin.
-                        if (!edgeOpen(cur.c, cur.r, cur.c + dc, cur.r)
-                            || !edgeOpen(cur.c, cur.r, cur.c, cur.r + dr)
-                            || !edgeOpen(nc, nr, nc, nr - dr)
-                            || !edgeOpen(nc, nr, nc - dc, nr)) continue;
+                        // Anti-coupe d'angle : la diagonale se ramène à deux
+                        // contournements orthogonaux — par la case latérale B
+                        // (cur→B→dest) ou par la case verticale C (cur→C→dest).
+                        // Chacun exige ses DEUX arêtes ouvertes. Il faut qu'au
+                        // moins un des deux passe. Si les deux sont barrés, on
+                        // se faufilerait par un coin de mur : coin de pièce
+                        // fermée (les deux murs touchent la case d'arrivée, que
+                        // ne voyait pas l'ancien test côté départ seul) ou deux
+                        // murs qui se rejoignent en un point. Contourner le
+                        // simple bout d'un mur (fin de cloison, cadre de porte,
+                        // jonction cabine d'ascenseur ↔ pièce) ne barre qu'un
+                        // seul contournement et reste donc permis.
+                        const viaB = edgeOpen(cur.c, cur.r, cur.c + dc, cur.r)
+                            && edgeOpen(nc, nr, nc, nr - dr);
+                        const viaC = edgeOpen(cur.c, cur.r, cur.c, cur.r + dr)
+                            && edgeOpen(nc, nr, nc - dc, nr);
+                        if (!viaB && !viaC) continue;
                     } else if (!edgeOpen(cur.c, cur.r, nc, nr)) continue;
                     const nd = cur.d + (diagonal ? DIAG_COST : 1);
                     if (nd > range + 1e-9) continue;

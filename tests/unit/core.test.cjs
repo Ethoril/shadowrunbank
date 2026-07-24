@@ -1223,6 +1223,45 @@ test('E3 : une diagonale ne coupe pas le coin convexe d’une pièce fermée', (
         'le coin convexe (murs sur les deux arêtes côté arrivée) reste fermé à la diagonale');
 });
 
+test('E3 : la porte d’une cabine d’ascenseur perce le mur pour embarquer/débarquer', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.addFloor('E3');
+    // Pièce entourant une cabine 2×2 laissée en trou : cells (4,3),(5,3),(4,4),
+    // (5,4). La cabine (hors zonage) est murée sur ses faces côté pièce ; seule
+    // sa porte (sud, sur la ligne y=5) doit ouvrir un passage.
+    const room = Store.addRoom(floor.id);
+    for (let c = 3; c <= 7; c++) {
+        for (let r = 4; r <= 8; r++) {
+            if ((c === 4 || c === 5) && r === 4) continue; // devant de cabine
+            if ((c === 4 || c === 5) && r === 3) continue; // fond de cabine
+            Store.paintCell(room, c, r);
+        }
+    }
+    const elevator = Store.addTransition('elevator', 'Ascenseur');
+    Store.addTransitionEndpoint(elevator, floor.id, 5, 4); // ancre = centre cabine
+
+    // Embarquer : depuis la pièce, la case de passage (centre cabine) est
+    // atteignable par la porte, orthogonalement — pas par une coupe d'angle.
+    const outside = Store.addToken(floor.id, 6.5, 6.5);
+    outside.movementRange = 12;
+    assert.ok(MapView.reachableCells(outside).has('5,4'),
+        'la porte de cabine rend le point de passage atteignable depuis la pièce');
+
+    // Débarquer : depuis la cabine, on rejoint la pièce.
+    const inside = Store.addToken(floor.id, 5.5, 4.5);
+    inside.movementRange = 12;
+    assert.ok(MapView.reachableCells(inside).has('5,5'),
+        'depuis la cabine, le pion peut ressortir dans la pièce');
+
+    // Un arrêt SANS porte reste muré (7.8 : non praticable).
+    Store.setElevatorStopEnabled(elevator, floor.id, false);
+    const blocked = Store.addToken(floor.id, 6.5, 6.5);
+    blocked.movementRange = 12;
+    assert.ok(!MapView.reachableCells(blocked).has('5,4'),
+        'un arrêt sans porte laisse la cabine inaccessible');
+});
+
 test('E3 : un décor mur posé sur une ligne de grille bloque la traversée', () => {
     const { Store, MapView } = loadApplicationCore();
     Store.load();
