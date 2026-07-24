@@ -1205,3 +1205,24 @@ test('E3 : une diagonale ne se faufile pas entre deux murs qui se touchent', () 
     assert.ok(!reach.has('6,6'),
         'le coin partagé (murs sur les deux arêtes) ne laisse pas passer la diagonale');
 });
+
+test('E3 : un décor mur posé sur une ligne de grille bloque la traversée', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.addFloor('E3');
+    const token = Store.addToken(floor.id, 5.5, 5.5); // zone libre
+    token.movementRange = 1; // un seul pas : impossible de contourner
+    // Mur horizontal (3 × 0,35) posé SUR la ligne y=6, couvrant les colonnes 3..6.
+    Store.addDecor('wall', floor.id, 5, 6);
+
+    const { edges, cells } = MapView.computeBlockedEdges(floor.id);
+    // Trop fin pour couvrir un centre de case → l'empreinte ne bloque rien...
+    assert.equal(cells.size, 0, 'un mur sur une ligne ne bloque aucune case par empreinte');
+    // ...mais il bloque l'arête horizontale qu'il chevauche.
+    assert.ok(edges.has('H:6:5'), 'le mur bloque l’arête sous sa position');
+
+    const reach = MapView.reachableCells(token);
+    assert.ok(!reach.has('5,6'), 'le pion ne peut pas franchir le mur droit vers le sud');
+    assert.ok(reach.has('5,4') && reach.has('4,5') && reach.has('6,5'),
+        'les cases non barrées (nord, est, ouest) restent atteignables');
+});

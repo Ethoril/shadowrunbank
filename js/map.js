@@ -239,15 +239,19 @@ const MapView = (() => {
     }
 
     /* Rôle d'un décor vis-à-vis du déplacement (modèle du plan E3) :
-       - 'gate' : porte/ouverture — peut PERCER une arête de zonage si
-                  franchissable, ou la maintenir bloquée si verrouillée ;
-       - 'cell' : tout autre décor bloquant (vitre, grille, pilier, mobilier)
-                  → rend non-entrables les cases de son empreinte ;
-       - 'none' : n'entrave pas le déplacement.
-       Les MURS viennent uniquement du zonage des pièces (computeWallEdges) ;
-       un décor n'agit jamais sur les arêtes en dehors des portes. */
+       - 'gate'    : porte/ouverture — PERCE une arête de zonage si franchissable,
+                     ou la maintient bloquée si verrouillée ;
+       - 'barrier' : séparateur fin structurel (mur, cloison, vitre, grille,
+                     barrière de mana). Trop fin pour couvrir un centre de case
+                     quand il est posé sur une ligne de grille : il bloque donc
+                     aussi l'ARÊTE qu'il chevauche, en plus de son empreinte ;
+       - 'cell'    : tout autre décor bloquant (pilier, mobilier massif)
+                     → rend non-entrables les cases de son empreinte ;
+       - 'none'    : n'entrave pas le déplacement. */
+    const EDGE_BARRIERS = ['wall', 'glass', 'grid', 'mana_barrier'];
     function decorMovementRole(decor) {
         if (decor.type === 'opaque_door' || decor.type === 'opening') return 'gate';
+        if (EDGE_BARRIERS.includes(decor.type)) return 'barrier';
         return DecorCatalog.get(decor.type).blocksMovement ? 'cell' : 'none';
     }
 
@@ -315,6 +319,14 @@ const MapView = (() => {
             if (role === 'cell') {
                 const { w, h } = decorFootprint(decor);
                 footprintCells(decor.x, decor.y, w, h).forEach(k => cells.add(k));
+                return;
+            }
+            if (role === 'barrier') {
+                // Empreinte (cas posé au centre d'une case) + arête chevauchée
+                // (cas posé sur une ligne de grille, où l'empreinte est vide).
+                const { w, h } = decorFootprint(decor);
+                footprintCells(decor.x, decor.y, w, h).forEach(k => cells.add(k));
+                decorStraddledEdges(decor).forEach(k => edges.add(k));
                 return;
             }
             // role === 'gate' : la porte agit sur l'arête de zonage qu'elle
