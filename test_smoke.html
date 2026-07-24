@@ -567,7 +567,8 @@
             check('pièce cachée non rendue (joueur)', !labels().includes('Hall Public'));
             hall.revealed = true;
 
-            // 19. Câble réseau : visible seulement si les DEUX extrémités sont révélées
+            // 19. Câble réseau (vue joueur) : la topologie ne se dévoile qu'au
+            //     piratage du nœud, même si les deux extrémités sont révélées.
             const node2 = Store.addEntity('network_node', floor0.id, 5, 5, 'NET');
             cam.networkId = node2.id;
             cam.revealed = true;
@@ -576,7 +577,14 @@
             check('câble masqué si nœud caché', document.querySelectorAll('#g-cables line').length === 0);
             node2.revealed = true;
             MapView.renderEntities();
-            check('câble visible si les deux révélés', document.querySelectorAll('#g-cables line').length === 1);
+            check('câble masqué tant que le nœud n’est pas piraté', document.querySelectorAll('#g-cables line').length === 0);
+            Store.setEntityState(node2, 'hacked');
+            MapView.renderEntities();
+            check('câble visible une fois le nœud piraté', document.querySelectorAll('#g-cables line').length === 1);
+            // On rétablit un nœud actif : la cascade « hacked » ne doit pas
+            // déteindre sur les vérifications de couverture qui suivent.
+            Store.setEntityState(node2, 'active');
+            cam.networkId = '';
 
             // 20. Couverture : révélation indépendante de l'entité
             Store.createCoverage(cam);
@@ -785,8 +793,11 @@
                 && plan.updatedAt === phase6PlanTimestamp && plan.revision === phase6PlanRevision);
             MapView.renderTokens();
             const runnerElement = document.querySelector('.runner-token[data-id="' + runner.id + '"]');
-            check('pion : cible tactile de 44 px et rendu sélectionné',
-                runnerElement && runnerElement.getBoundingClientRect().width >= 44
+            // Le cercle visible suit la case, mais la zone tactile (pseudo ::before)
+            // reste ≥ 44 px pour rester confortable au tap sur tablette.
+            const tapWidth = parseFloat(getComputedStyle(runnerElement, '::before').width);
+            check('pion : zone tactile ≥ 44 px et rendu sélectionné',
+                runnerElement && tapWidth >= 44
                 && runnerElement.classList.contains('selected'));
 
             runner.name = 'Kestrel';

@@ -1515,9 +1515,16 @@ const MapView = (() => {
             const node = ents.find(n => n.id === ent.networkId);
             if (!node) return;
 
+            const effectiveState = Store.getEffectiveState(node);
+            // Vue joueur : la topologie réseau reste cachée tant que le nœud
+            // n'est pas piraté. Voir un câble dévoilerait quels appareils il
+            // pilote — un renseignement qui n'arrive qu'avec l'accès Matrice.
+            // Le nœud et les appareils restent visibles physiquement ; seul le
+            // lien entre eux attend le piratage (qui fait cascader « hacked »).
+            if (Store.isPlayerView() && effectiveState !== 'hacked') return;
+
             const a = Anim.effectivePos(ent, now);
             const b = Anim.effectivePos(node, now);
-            const effectiveState = Store.getEffectiveState(node);
             const stroke = effectiveState === 'active' ? 'rgba(74, 246, 38, 0.4)'
                 : effectiveState === 'hacked' ? 'rgba(255, 179, 0, 0.6)'
                 : 'rgba(82, 120, 116, 0.2)';

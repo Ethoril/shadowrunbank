@@ -272,7 +272,7 @@ test('la suite smoke complète passe dans un vrai navigateur', async () => {
     await page.goto(baseUrl + '/test_smoke.html');
     await page.waitForFunction(() => document.querySelector('#test-results').textContent.includes('PASS'));
     const results = await page.locator('#test-results').innerText();
-    assert.equal(results.split('\n').filter(line => line.startsWith('PASS')).length, 199);
+    assert.equal(results.split('\n').filter(line => line.startsWith('PASS')).length, 200);
     assert.equal(results.includes('FAIL'), false);
     assert.equal(results.includes('ERROR'), false);
     await context.close();
@@ -631,6 +631,44 @@ test('une caméra piratée affiche un flux limité à son cône dans la vue joue
     assert.equal(await page.locator(`.entity[data-id="${ids.inside}"]`).count(), 0);
     // Flux coupé (nœud réactivé) : la caméra source n'est plus dévoilée non plus.
     assert.equal(await page.locator(`.entity[data-id="${ids.camera}"]`).count(), 0);
+    await context.close();
+});
+
+test('le réseau d’un nœud reste caché aux joueurs jusqu’à son piratage', async () => {
+    const context = await browser.newContext();
+    await context.route('**/js/cloud.js*', route => route.abort());
+    const page = await context.newPage();
+    await page.goto(baseUrl + '/index.html');
+    const ids = await page.evaluate(() => {
+        const floor = Store.addFloor('Réseau');
+        floor.revealed = true;
+        // Nœud + caméra reliés, tous deux révélés en dur : sans piratage, le
+        // nœud n'est pas « hacked ».
+        const node = Store.addEntity('network_node', floor.id, 5, 5, 'Nœud');
+        const device = Store.addEntity('camera', floor.id, 9, 5, 'Caméra');
+        device.networkId = node.id;
+        node.revealed = true; device.revealed = true;
+        Store.ui.preview = true;
+        Store.ui.currentFloorId = floor.id;
+        App.renderAll();
+        return { floor: floor.id, node: node.id, device: device.id };
+    });
+
+    assert.equal(await page.evaluate(() => Store.currentFloor().id), ids.floor);
+    // Nœud et appareil sont visibles physiquement...
+    assert.equal(await page.locator(`.entity[data-id="${ids.node}"]`).count(), 1);
+    assert.equal(await page.locator(`.entity[data-id="${ids.device}"]`).count(), 1);
+    // ...mais le câble (la topologie réseau) reste caché tant que rien n'est piraté.
+    assert.equal(await page.locator('#g-cables .network-cable').count(), 0,
+        'aucun câble réseau tant que le nœud n’est pas piraté');
+
+    // Piratage du nœud → la topologie s'illumine pour les joueurs.
+    await page.evaluate(nodeId => {
+        Store.setEntityState(Store.findEntity(nodeId), 'hacked');
+        App.renderAll();
+    }, ids.node);
+    assert.equal(await page.locator('#g-cables .network-cable').count(), 1,
+        'le câble apparaît une fois le nœud piraté');
     await context.close();
 });
 
