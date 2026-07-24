@@ -1206,6 +1206,23 @@ test('E3 : une diagonale ne se faufile pas entre deux murs qui se touchent', () 
         'le coin partagé (murs sur les deux arêtes) ne laisse pas passer la diagonale');
 });
 
+test('E3 : une diagonale ne coupe pas le coin convexe d’une pièce fermée', () => {
+    const { Store, MapView } = loadApplicationCore();
+    Store.load();
+    const floor = Store.addFloor('E3');
+    // Pièce carrée fermée, coin haut-gauche en (6,6).
+    const room = Store.addRoom(floor.id);
+    Store.paintCell(room, 6, 6); Store.paintCell(room, 7, 6);
+    Store.paintCell(room, 6, 7); Store.paintCell(room, 7, 7);
+    // Pion juste en diagonale hors du coin haut-gauche. Comme la pièce est
+    // close, la seule façon d'atteindre (6,6) serait de couper le coin.
+    const token = Store.addToken(floor.id, 5.5, 5.5);
+    token.movementRange = 6;
+    const reach = MapView.reachableCells(token);
+    assert.ok(!reach.has('6,6'),
+        'le coin convexe (murs sur les deux arêtes côté arrivée) reste fermé à la diagonale');
+});
+
 test('E3 : un décor mur posé sur une ligne de grille bloque la traversée', () => {
     const { Store, MapView } = loadApplicationCore();
     Store.load();

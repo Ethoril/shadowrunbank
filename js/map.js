@@ -396,11 +396,17 @@ const MapView = (() => {
                     if (!inGrid(nc, nr) || cellBlocked(nc, nr)) continue;
                     const diagonal = dc !== 0 && dr !== 0;
                     if (diagonal) {
-                        // Anti-coupe d'angle : les deux arêtes orthogonales du
-                        // coin doivent être ouvertes (on ne se faufile pas
-                        // entre deux murs qui se touchent).
+                        // Anti-coupe d'angle : les QUATRE arêtes qui se
+                        // rejoignent au point de coin partagé doivent être
+                        // ouvertes (on ne se faufile pas près d'un mur).
+                        // Ne tester que les deux arêtes touchant la case de
+                        // DÉPART laissait passer la diagonale par un coin
+                        // CONVEXE de pièce, dont les deux murs touchent la case
+                        // d'ARRIVÉE : la pièce paraissait « ouverte » au coin.
                         if (!edgeOpen(cur.c, cur.r, cur.c + dc, cur.r)
-                            || !edgeOpen(cur.c, cur.r, cur.c, cur.r + dr)) continue;
+                            || !edgeOpen(cur.c, cur.r, cur.c, cur.r + dr)
+                            || !edgeOpen(nc, nr, nc, nr - dr)
+                            || !edgeOpen(nc, nr, nc - dc, nr)) continue;
                     } else if (!edgeOpen(cur.c, cur.r, nc, nr)) continue;
                     const nd = cur.d + (diagonal ? DIAG_COST : 1);
                     if (nd > range + 1e-9) continue;
