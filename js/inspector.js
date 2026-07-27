@@ -57,14 +57,45 @@ const Inspector = (() => {
         body.appendChild(field('Origine de visibilité :', value));
     }
 
+    let lastRenderedKey = null;
+
+    function getSelectionKey(sel) {
+        if (!sel) return null;
+        return sel.kind + ':' + sel.id;
+    }
+
     // E2 : en vue joueur, l'encart d'inspecteur est un panneau accosté permanent
     // (états réduit/aperçu/agrandi pilotés par App). `render()` ne fait que
     // (re)remplir le contenu depuis la sélection ; il ne change plus jamais
     // l'état d'ouverture — un clic sur la carte remplit la carte en place.
-    function render() {
+    function render(force = false) {
         const body = panel();
-        body.innerHTML = '';
+        if (!body) return;
         const sel = Store.ui.selection;
+        const key = getSelectionKey(sel);
+
+        // Si l'utilisateur est en train de saisir du texte dans un champ de l'inspecteur
+        // et que la sélection n'a pas changé pour cet objet, on ne réinitialise pas le DOM
+        // de l'inspecteur afin d'éviter de perdre le focus et le curseur (expulsion du champ).
+        // On restreint volontairement aux champs de SAISIE (texte / nombre / textarea) :
+        // les <select> et cases à cocher gardent aussi le focus après un clic, mais leurs
+        // handlers appellent render() pour reconstruire des champs conditionnels — il ne
+        // faut donc surtout pas sauter ce re-rendu pour eux.
+        const active = document.activeElement;
+        const isTextEntry = active && (
+            active.tagName === 'TEXTAREA' ||
+            (active.tagName === 'INPUT' &&
+                ['text', 'number', 'search', 'email', 'url', 'tel', 'password']
+                    .includes((active.type || 'text').toLowerCase()))
+        );
+        const isEditingInsideBody = isTextEntry && body.contains(active);
+
+        if (!force && isEditingInsideBody && key && key === lastRenderedKey) {
+            return;
+        }
+
+        lastRenderedKey = key;
+        body.innerHTML = '';
 
         if (!sel) {
             const hint = document.createElement('div');

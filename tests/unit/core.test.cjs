@@ -1282,3 +1282,69 @@ test('E3 : un décor mur posé sur une ligne de grille bloque la traversée', ()
     assert.ok(reach.has('5,4') && reach.has('4,5') && reach.has('6,5'),
         'les cases non barrées (nord, est, ouest) restent atteignables');
 });
+
+test('Inspector : préserve le focus et le champ actif pendant la saisie de texte (pas d’expulsion)', () => {
+    const { context, Store } = loadApplicationCore();
+    // Créer un environnement DOM minimal dans le contexte vm pour tester Inspector.render
+    vm.runInContext(`
+        const makeElement = (tagName) => {
+            const el = {
+                tagName: (tagName || 'DIV').toUpperCase(),
+                innerHTML: '',
+                textContent: '',
+                children: [],
+                style: {},
+                classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+                appendChild: function(child) { this.children.push(child); child.parentNode = this; return child; },
+                addEventListener: () => {},
+                setAttribute: () => {},
+                getAttribute: () => null,
+                contains: function(node) {
+                    let curr = node;
+                    while (curr) {
+                        if (curr === this) return true;
+                        curr = curr.parentNode;
+                    }
+                    return false;
+                }
+            };
+            return el;
+        };
+        const bodyEl = makeElement('DIV');
+        document.createElement = tag => makeElement(tag);
+        document.createTextNode = text => { const el = makeElement('TEXT'); el.textContent = text; return el; };
+        document.getElementById = id => id === 'inspector-body' ? bodyEl : null;
+        document.body = makeElement('BODY');
+        document.activeElement = null;
+    `, context);
+
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'visibility.js'), 'utf8'), context);
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'inspector.js'), 'utf8'), context);
+
+    const Inspector = vm.runInContext('Inspector', context);
+    Store.load();
+    const floor = Store.addFloor('Etage Focus');
+    const token = Store.addToken(floor.id, 2, 2, 'Runner Initial');
+
+    Store.ui.selection = { kind: 'token', id: token.id };
+    Inspector.render();
+
+    const bodyEl = vm.runInContext('bodyEl', context);
+    assert.ok(bodyEl.children.length > 0, 'L’inspecteur a généré les éléments du pion');
+
+    // Simuler qu'un champ input à l'intérieur de l'inspecteur a le focus
+    const fakeInput = vm.runInContext("makeElement('INPUT')", context);
+    fakeInput.parentNode = bodyEl;
+    context.document.activeElement = fakeInput;
+
+    // Premier rendu avec focus actif → ne doit pas vider bodyEl.innerHTML
+    bodyEl.innerHTML = 'PRESERVED';
+    Inspector.render();
+    assert.equal(bodyEl.innerHTML, 'PRESERVED', 'Le DOM de l’inspecteur n’est pas détruit pendant la saisie');
+
+    // Changement de sélection → doit forcer le re-rendu
+    Store.ui.selection = { kind: 'token', id: 'autre_token' };
+    Inspector.render();
+    assert.notEqual(bodyEl.innerHTML, 'PRESERVED', 'Le changement de sélection force la mise à jour de l’inspecteur');
+});
+
